@@ -1,15 +1,12 @@
 // ---------------------------------------------------------------------------
 // Web Push — notificações com o app FECHADO.
 //
-// Para ativar (uma vez só):
-//   1) Gere o par de chaves:
-//        npx web-push generate-vapid-keys
-//   2) Cole a CHAVE PÚBLICA (application server key) na constante abaixo.
-//   3) Siga o PUSH_SETUP.md para guardar as chaves e a inscrição nos
-//      secrets do GitHub — o workflow push-reminders.yml dispara os
-//      lembretes no horário, mesmo com o app fechado.
+// Chave VAPID PÚBLICA (application server key) — é segura para ficar aqui,
+// ela vai embutida no app e é pública por design.
 //
-// Enquanto estiver vazia, o app mostra "configurar" no Perfil, sem quebrar
-// as notificações de app-aberto (que continuam funcionando normalmente).
+// A PRIVADA NÃO pode ser commitada: ela vive apenas no secret
+// VAPID_PRIVATE_KEY do GitHub (Settings → Secrets and variables → Actions),
+// junto com VAPID_PUBLIC_KEY e PUSH_SUBSCRIPTION — veja PUSH_SETUP.md.
 // ---------------------------------------------------------------------------
-export const VAPID_PUBLIC_KEY = "";
+export const VAPID_PUBLIC_KEY =
+  "BP8YzdwZQtYWaj4i0JLINZdo7COeyUgc3x18YK2fb3_-NfrY1wBLreXW0RHlWpx8s-nOhuNHc6Siwgn-Nv4dkzM";
