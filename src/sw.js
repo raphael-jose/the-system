@@ -10,6 +10,15 @@ import { NavigationRoute, registerRoute } from "workbox-routing";
 // ---- Offline: pré-cacheia o build inteiro (manifest injetado no build) ----
 precacheAndRoute(self.__WB_MANIFEST);
 
+// ---- Atualização automática (registerType: "autoUpdate") ----
+// Sem skipWaiting o SW novo fica em "waiting" e o app instalado continua
+// servindo o bundle ANTIGO (bug: updates nunca chegam no celular). Com isso,
+// o SW novo assume na hora e o autoUpdate recarrega a página.
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 // ---- SPA: qualquer navegação resolve para o index.html (offline) ----
 const navHandler = createHandlerBoundToURL(
   new URL("index.html", self.registration.scope).href
