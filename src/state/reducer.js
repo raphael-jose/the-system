@@ -162,6 +162,7 @@ function normalizeHistory(raw) {
 const EXERCISE_DAILIES = ["d-pushups", "d-squats", "d-cardio"];
 const STUDY_DAILY = "d-study";
 const ALL_DAILY_ID = "d-all";
+const DISCIPLINE_DAILY_ID = "d-discipline";
 
 // ---- Histórico diário: { [data]: { ids, xp, hours, byCat, sessions } } ----
 // ids: missões concluídas no dia (alimenta as semanais)
@@ -271,7 +272,7 @@ function weeklyProgressFor(state, weekly) {
 }
 
 // Bônus automático de dia completo (d-all): fecha quando TODAS as diárias
-// (sem o próprio bônus) estão completas. Retorna [estado, aplicou].
+// (incluindo d-discipline) estão completas. Retorna [estado, aplicou].
 function applyAllDailyBonus(s, today, mult, reward) {
   const dailies = s.dailyMissions;
   const nonBonus = dailies.filter((m) => m.id !== ALL_DAILY_ID);
@@ -367,6 +368,162 @@ function updateWeeklies(s, today, mult, reward, completedDailyId) {
   }
   ns = { ...ns, weeklyMissions: ns.weeklyMissions.map((w) => wmap.get(w.id)) };
   return [ns, reward];
+}
+
+// Check-in diário do sistema de disciplina (NoFap). É a própria missão diária
+// d-discipline: marcar o card no Missionário = registrar o dia limpo (e o
+// botão da tela Disciplina faz a mesma coisa). Fluxo unificado:
+// +15 XP (fixo) · +1 SEN, marcos 7/30/90, streak do app, d-all e semanais.
+function doNofapCheckin(state, today, hour) {
+  const nf = state.player.nofap || {};
+  if (nf.lastClaim === today) {
+    // já registrado hoje — garante apenas o card marcado (saves antigos)
+    const incomplete = state.dailyMissions.some(
+      (m) => m.id === DISCIPLINE_DAILY_ID && !m.completed
+    );
+    if (incomplete) {
+      return [
+        {
+          ...state,
+          dailyMissions: state.dailyMissions.map((m) =>
+            m.id === DISCIPLINE_DAILY_ID
+              ? { ...m, completed: true, completedAt: today }
+              : m
+          ),
+        },
+        null,
+      ];
+    }
+    return [state, null];
+  }
+
+  const streak = nofapStreak(state, today);
+  const bestStreak = Math.max(nf.bestStreak || 0, streak);
+
+  // ---- Atributos e XP base (fixo, como o check-in sempre foi) ----
+  const stats = {
+    ...state.player.stats,
+    SEN: (state.player.stats.SEN || 0) + 1,
+  };
+  let player = { ...state.player, stats };
+  let levelsGained = 0;
+  const baseXp = 15;
+  const r1 = applyXp(player, baseXp);
+  player = r1.player;
+  levelsGained += r1.levelsGained;
+
+  // ---- Marcos cruzados (7/30/90 dias) — uma vez cada ----
+  let milestones = nf.milestones || [];
+  let bonusXp = 0;
+  const newMilestones = [];
+  for (const m of NOFAP_MILESTONES) {
+    if (streak >= m.days && !milestones.includes(m.days)) {
+      milestones = [...milestones, m.days];
+      bonusXp += m.xp;
+      newMilestones.push(m);
+    }
+  }
+  if (bonusXp > 0) {
+    const r2 = applyXp(player, bonusXp);
+    player = r2.player;
+    levelsGained += r2.levelsGained;
+  }
+
+  // ---- Streak do app (missão diária alimenta a sequência) ----
+  const last = state.player.lastActivityDate;
+  let appStreak = state.player.streak;
+  if (last === today) {
+    // já ativo hoje
+  } else if (last === yesterdayStr()) {
+    appStreak += 1;
+  } else {
+    appStreak = 1;
+  }
+  player = {
+    ...player,
+    streak: appStreak,
+    lastActivityDate: today,
+    totalMissionsCompleted: (state.player.totalMissionsCompleted || 0) + 1,
+  };
+
+  // ---- Histórico do dia (gráfico + disciplina) ----
+  const hist = { ...(state._dailyHistory || {}) };
+  const prev = hist[today];
+  const base = prev && !Array.isArray(prev) ? prev : emptyDayRecord();
+  hist[today] = {
+    ...base,
+    ids: [...new Set([...historyIds(prev), "nofap-checkin"])],
+    xp: (base.xp || 0) + baseXp + bonusXp,
+    hours: [...(base.hours || []), hour ?? new Date().getHours()],
+    byCat: addCat(base.byCat || {}, "disciplina"),
+  };
+
+  // ---- Marca a missão diária como completa (sem XP duplo) ----
+  const dailyMissions = state.dailyMissions.map((m) =>
+    m.id === DISCIPLINE_DAILY_ID
+      ? { ...m, completed: true, completedAt: today }
+      : m
+  );
+
+  let s = {
+    ...state,
+    player: {
+      ...player,
+      nofap: { ...nf, milestones, lastClaim: today, bestStreak },
+    },
+    _dailyHistory: hist,
+    dailyMissions,
+  };
+
+  // ---- Bônus de dia completo + progresso/auto-complete semanais ----
+  // (mesmo comportamento de qualquer outra diária)
+  const mult = streakMultiplier(appStreak);
+  const reward = emptyReward();
+  [s] = applyAllDailyBonus(s, today, mult, reward);
+  [s] = updateWeeklies(s, today, mult, reward, DISCIPLINE_DAILY_ID);
+
+  // o XP de bônus (d-all) e de semanais entra no registro do dia
+  if (reward.xpGained > 0) {
+    const hist2 = { ...(s._dailyHistory || {}) };
+    const prev2 = hist2[today];
+    const base2 = prev2 && !Array.isArray(prev2) ? prev2 : emptyDayRecord();
+    hist2[today] = {
+      ...base2,
+      xp: (base2.xp || 0) + reward.xpGained,
+    };
+    s = { ...s, _dailyHistory: hist2 };
+  }
+
+  // ---- SP de todos os levels ganhos (check-in + bônus + semanais) ----
+  const totalLevels = levelsGained + reward.levelsGained;
+  const totalSp = totalLevels * SP_PER_LEVEL;
+  if (totalSp > 0) {
+    s = { ...s, player: { ...s.player, sp: (s.player.sp || 0) + totalSp } };
+  }
+
+  // ---- Conquistas ----
+  const [finalS, newlyAch] = applyAchievements(s, today);
+  return [
+    finalS,
+    {
+      xpGained: baseXp + bonusXp + reward.xpGained,
+      statsGained: mergeStats({ SEN: 1 }, reward.statsGained),
+      levelsGained: totalLevels,
+      spGained: totalSp,
+      spFromAch: achievementSpReward(newlyAch),
+      achievementsGained: newlyAch,
+      rankBefore: rankForLevel(state.player.level).rank,
+      rankAfter: rankForLevel(finalS.player.level).rank,
+      fromLevel: state.player.level,
+      toLevel: finalS.player.level,
+      milestones: newMilestones,
+      toast: newMilestones.length
+        ? `Marco de disciplina: ${newMilestones
+            .map((m) => `${m.title} (${m.days} dias) +${m.xp} XP`)
+            .join(", ")}`
+        : "Dia limpo registrado. +15 XP · +1 SEN",
+    },
+  ];
 }
 
 // Reducer principal. Retorna [estadoNovo, resultado|null].
@@ -684,6 +841,12 @@ export function reduce(state, action) {
       const idx = missions.findIndex((m) => m.id === id);
       if (idx === -1 || missions[idx].completed) return [state, null];
 
+      // A missão de disciplina (NoFap) é o próprio check-in diário — fluxo
+      // unificado com o botão da tela Disciplina (mesma ação, mesmo resultado).
+      if (list === "daily" && id === DISCIPLINE_DAILY_ID) {
+        return doNofapCheckin(state, today, action.hour);
+      }
+
       let s = state;
       let reward = emptyReward();
 
@@ -810,86 +973,9 @@ export function reduce(state, action) {
     }
 
     case "NOFAP_CHECKIN": {
-      // Registra o dia limpo: +15 XP e +1 SEN, uma vez por dia.
-      // Ao cruzar um marco (7/30/90 dias) concede XP bônus.
-      const today = todayStr();
-      const nf = state.player.nofap || {};
-      if (nf.lastClaim === today) return [state, null];
-
-      const streak = nofapStreak(state, today);
-      const bestStreak = Math.max(nf.bestStreak || 0, streak);
-      const stats = {
-        ...state.player.stats,
-        SEN: (state.player.stats.SEN || 0) + 1,
-      };
-
-      let player = { ...state.player, stats };
-      let levelsGained = 0;
-      const baseXp = 15;
-      const r1 = applyXp(player, baseXp);
-      player = r1.player;
-      levelsGained += r1.levelsGained;
-
-      // marcos cruzados (uma vez só cada)
-      let milestones = nf.milestones || [];
-      let bonusXp = 0;
-      const newMilestones = [];
-      for (const m of NOFAP_MILESTONES) {
-        if (streak >= m.days && !milestones.includes(m.days)) {
-          milestones = [...milestones, m.days];
-          bonusXp += m.xp;
-          newMilestones.push(m);
-        }
-      }
-      if (bonusXp > 0) {
-        const r2 = applyXp(player, bonusXp);
-        player = r2.player;
-        levelsGained += r2.levelsGained;
-      }
-
-      const spGained = levelsGained * SP_PER_LEVEL;
-      if (spGained > 0) {
-        player = { ...player, sp: (player.sp || 0) + spGained };
-      }
-
-      // o check-in entra no registro do dia (gráfico + disciplina)
-      const hist = { ...(state._dailyHistory || {}) };
-      const prev = hist[today];
-      const base = prev && !Array.isArray(prev) ? prev : emptyDayRecord();
-      hist[today] = {
-        ...base,
-        ids: [...new Set([...historyIds(prev), "nofap-checkin"])],
-        xp: (base.xp || 0) + baseXp + bonusXp,
-        hours: [...(base.hours || []), action.hour ?? new Date().getHours()],
-        byCat: addCat(base.byCat || {}, "disciplina"),
-      };
-
-      const base2 = {
-        ...state,
-        player: {
-          ...player,
-          nofap: { ...nf, milestones, lastClaim: today, bestStreak },
-        },
-        _dailyHistory: hist,
-      };
-      const [finalS, newlyAch] = applyAchievements(base2, today);
-      return [
-        finalS,
-        {
-          xpGained: baseXp + bonusXp,
-          statsGained: { SEN: 1 },
-          levelsGained,
-          spGained,
-          spFromAch: achievementSpReward(newlyAch),
-          achievementsGained: newlyAch,
-          milestones: newMilestones,
-          toast: newMilestones.length
-            ? `Marco de disciplina: ${newMilestones
-                .map((m) => `${m.title} (${m.days} dias) +${m.xp} XP`)
-                .join(", ")}`
-            : "Dia limpo registrado. +15 XP · +1 SEN",
-        },
-      ];
+      // Registra o dia limpo — é a missão diária d-discipline.
+      // Fluxo completo em doNofapCheckin (XP, marcos, streak, d-all, semanais).
+      return doNofapCheckin(state, todayStr(), action.hour);
     }
 
     case "ORAL_BRUSH": {
@@ -1028,6 +1114,12 @@ export function reduce(state, action) {
               bestStreak,
             },
           },
+          // o dia deixou de ser limpo → a missão desmarca para refazer
+          dailyMissions: state.dailyMissions.map((m) =>
+            m.id === DISCIPLINE_DAILY_ID
+              ? { ...m, completed: false, completedAt: null }
+              : m
+          ),
         },
         { toast: "Recaída registrada. O contador zerou — recomece hoje." },
       ];

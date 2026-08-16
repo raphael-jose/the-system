@@ -233,6 +233,16 @@ export const DAILY_SEED = [
     },
   },
   {
+    id: "d-discipline",
+    title: "Dia Limpo (NoFap)",
+    category: "disciplina",
+    xp: 15,
+    stats: { SEN: 1 },
+    description:
+      "Zero recaídas hoje. Registrar o dia limpo — o SYSTEM exige. Veja o contador e os marcos em Perfil → Disciplina.",
+    nofap: true,
+  },
+  {
     id: "d-all",
     title: "Completar Todas as Missões do Dia",
     xp: 50,

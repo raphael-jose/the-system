@@ -22,6 +22,7 @@ const DAILY_IDS = [
   "d-sleep",
   "d-study",
   "d-meditate",
+  "d-discipline",
 ];
 
 function completeAllDailies(s) {
@@ -55,7 +56,7 @@ describe("criação", () => {
       PER: 10,
       SEN: 10,
     });
-    expect(s.dailyMissions).toHaveLength(9);
+    expect(s.dailyMissions).toHaveLength(10);
     expect(s.weeklyMissions).toHaveLength(4);
     expect(s.dungeons).toHaveLength(3);
     expect(s.lastDailyReset).toBe(todayStr());
@@ -73,7 +74,7 @@ describe("criação", () => {
     expect(m.player.level).toBe(3);
     expect(m.player.stats.FOR).toBe(15);
     expect(m.player.stats.AGI).toBe(10); // padrão preservado
-    expect(m.dailyMissions).toHaveLength(9); // seed re-adicionado
+    expect(m.dailyMissions).toHaveLength(10); // seed re-adicionado
     expect(m._fullDailyDays).toEqual([]);
   });
 
@@ -139,10 +140,10 @@ describe("missões diárias", () => {
     const full = completeAllDailies(create());
     expect(full.dailyMissions.find((m) => m.id === "d-all").completed).toBe(true);
     expect(full._fullDailyDays).toContain(todayStr());
-    // 8 diárias = 155 XP + bônus 50 = 205 XP → level 2, sobra 105
+    // 9 diárias = 170 XP + bônus 50 = 220 XP → level 2, sobra 120
     expect(full.player.level).toBe(2);
-    expect(full.player.xp).toBe(105);
-    expect(full.player.stats.SEN).toBe(11); // +1 do bônus de dia completo
+    expect(full.player.xp).toBe(120);
+    expect(full.player.stats.SEN).toBe(12); // +1 da disciplina +1 do bônus
   });
 });
 
@@ -386,21 +387,21 @@ describe("SP (pontos de atributo)", () => {
   it("distribuição automática gasta tudo nos atributos mais fracos", () => {
     vi.useFakeTimers();
     vi.setSystemTime(MON);
-    // dia completo → level 2 → 3 SP; atributos: FOR 17, AGI 14, VIT 16,
-    // INT 13, PER 12, SEN 11 → mais fracos: SEN, PER (empate pela ordem)
+    // dia completo → level 2 (3 SP) + Sobrecarga (10 missões → +5 SP) = 8 SP;
+    // atributos: FOR 17, AGI 14, VIT 16, INT 13, PER 12, SEN 12
     const full = completeAllDailies(create());
-    expect(full.player.sp).toBe(3);
+    expect(full.player.sp).toBe(8);
     const [s2, r] = reduce(full, { type: "AUTO_DISTRIBUTE_SP" });
-    expect(r.spAllocated).toEqual({ SEN: 2, PER: 1 });
+    expect(r.spAllocated).toEqual({ PER: 3, SEN: 2, INT: 2, AGI: 1 });
     expect(s2.player.sp).toBe(0);
-    expect(s2.player.spAllocated).toBe(3);
-    expect(s2.player.stats.SEN).toBe(13);
-    expect(s2.player.stats.PER).toBe(13);
-    expect(s2.player.stats.INT).toBe(13);
+    expect(s2.player.spAllocated).toBe(8);
+    expect(s2.player.stats.SEN).toBe(14);
+    expect(s2.player.stats.PER).toBe(15);
+    expect(s2.player.stats.INT).toBe(15);
     // sem SP → no-op
     const [s3, r3] = reduce(s2, { type: "AUTO_DISTRIBUTE_SP" });
     expect(r3).toBeNull();
-    expect(s3.player.stats.SEN).toBe(13);
+    expect(s3.player.stats.SEN).toBe(14);
   });
 });
 
@@ -453,12 +454,12 @@ describe("histórico de sessão", () => {
     vi.useFakeTimers();
     vi.setSystemTime(MON);
     const full = completeAllDailies(create());
-    // 8 diárias = 155 XP + bônus 50 = 205, 9 ids (inclui o bônus d-all)
+    // 9 diárias = 170 XP + bônus 50 = 220, 10 ids (inclui o bônus d-all)
     const rec = full._dailyHistory[todayStr()];
-    expect(rec.xp).toBe(205);
-    expect(rec.ids).toHaveLength(9);
+    expect(rec.xp).toBe(220);
+    expect(rec.ids).toHaveLength(10);
     expect(rec.ids).toContain("d-all");
-    expect(rec.byCat.disciplina).toBe(1); // só o bônus d-all
+    expect(rec.byCat.disciplina).toBe(2); // check-in nofap + d-all
   });
 
   it("registra sessão de treino guiado com duração e séries", () => {
@@ -742,7 +743,7 @@ describe("conquistas (achievements)", () => {
 });
 
 describe("disciplina (NoFap)", () => {
-  it("check-in registra o dia: +15 XP, +1 SEN, histórico e uma vez por dia", () => {
+  it("check-in registra o dia: +15 XP, +1 SEN, missão, streak e histórico", () => {
     vi.useFakeTimers();
     vi.setSystemTime(MON);
     let s = create();
@@ -751,15 +752,65 @@ describe("disciplina (NoFap)", () => {
     expect(r.statsGained).toEqual({ SEN: 1 });
     expect(s1.player.stats.SEN).toBe(11);
     expect(s1.player.nofap.lastClaim).toBe(todayStr());
+    // agora é também uma missão diária: marca o card e alimenta o streak
+    expect(s1.dailyMissions.find((m) => m.id === "d-discipline").completed).toBe(
+      true
+    );
+    expect(s1.player.streak).toBe(1);
+    expect(s1.player.totalMissionsCompleted).toBe(1);
     const rec = s1._dailyHistory[todayStr()];
     expect(rec.ids).toContain("nofap-checkin");
     expect(rec.byCat.disciplina).toBe(1);
     expect(rec.xp).toBe(15);
 
-    // segunda tentativa no mesmo dia: no-op
+    // segunda tentativa no mesmo dia (botão ou checkbox): no-op
     const [s2, r2] = reduce(s1, { type: "NOFAP_CHECKIN" });
     expect(r2).toBeNull();
     expect(s2).toBe(s1);
+  });
+
+  it("a missão diária d-discipline É o check-in (mesmo fluxo, sem XP duplo)", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(MON);
+    let s = create();
+    const [s1, r] = reduce(s, {
+      type: "COMPLETE_MISSION",
+      list: "daily",
+      id: "d-discipline",
+      hour: 21,
+    });
+    expect(r.xpGained).toBe(15);
+    expect(s1.player.nofap.lastClaim).toBe(todayStr());
+    expect(s1.player.stats.SEN).toBe(11);
+    expect(s1.player.streak).toBe(1);
+    expect(s1.dailyMissions.find((m) => m.id === "d-discipline").completed).toBe(
+      true
+    );
+    // depois de marcar no card, o botão da tela Disciplina é no-op
+    const [s2, r2] = reduce(s1, { type: "NOFAP_CHECKIN" });
+    expect(r2).toBeNull();
+    // e completar de novo também
+    const [s3, r3] = reduce(s2, {
+      type: "COMPLETE_MISSION",
+      list: "daily",
+      id: "d-discipline",
+    });
+    expect(r3).toBeNull();
+    expect(s3.player.xp).toBe(15);
+  });
+
+  it("d-discipline conta para fechar o dia (d-all)", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(MON);
+    let s = create();
+    for (const id of DAILY_IDS) {
+      if (id !== "d-discipline") s = complete(s, "daily", id)[0];
+    }
+    expect(s.dailyMissions.find((m) => m.id === "d-all").completed).toBe(false);
+    const [s2, r] = complete(s, "daily", "d-discipline");
+    expect(s2.dailyMissions.find((m) => m.id === "d-all").completed).toBe(true);
+    expect(r.xpGained).toBe(15 + 50); // check-in + bônus de dia completo
+    expect(s2._fullDailyDays).toContain(todayStr());
   });
 
   it("cruzar 7 dias limpos reivindica o marco Barreira (+50 XP)", () => {
@@ -771,6 +822,9 @@ describe("disciplina (NoFap)", () => {
     expect(r.xpGained).toBe(15 + 50);
     expect(r.milestones.map((m) => m.days)).toEqual([7]);
     expect(s1.player.nofap.milestones).toContain(7);
+    expect(s1.dailyMissions.find((m) => m.id === "d-discipline").completed).toBe(
+      true
+    );
 
     // marco não reivindica de novo
     const s3 = {
@@ -783,16 +837,32 @@ describe("disciplina (NoFap)", () => {
     expect(s4.player.nofap.milestones).toHaveLength(1);
   });
 
-  it("recaída zera o contador e fixa o recorde", () => {
+  it("recaída zera o contador, fixa o recorde e desmarca a missão", () => {
     vi.useFakeTimers();
     vi.setSystemTime(MON);
     let s = create();
     s.createdAt = addDays(todayStr(), -5); // streak 5
+    // registra o dia limpo primeiro
+    s = reduce(s, { type: "NOFAP_CHECKIN" })[0];
+    expect(s.dailyMissions.find((m) => m.id === "d-discipline").completed).toBe(
+      true
+    );
+    // recaída → o dia deixa de ser limpo
     const [s1, r] = reduce(s, { type: "NOFAP_RELAPSE" });
     expect(r.toast).toContain("Recaída");
     expect(s1.player.nofap.lastRelapse).toBe(todayStr());
     expect(s1.player.nofap.bestStreak).toBe(5);
     expect(s1.player.nofap.lastClaim).toBeNull();
+    expect(s1.dailyMissions.find((m) => m.id === "d-discipline").completed).toBe(
+      false
+    );
+    // pode registrar de novo no mesmo dia (recomeço)
+    const [s2, r2] = reduce(s1, { type: "NOFAP_CHECKIN" });
+    expect(r2).not.toBeNull();
+    expect(s2.player.nofap.lastClaim).toBe(todayStr());
+    expect(s2.dailyMissions.find((m) => m.id === "d-discipline").completed).toBe(
+      true
+    );
   });
 });
 
