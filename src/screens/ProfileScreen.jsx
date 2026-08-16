@@ -186,7 +186,8 @@ export default function ProfileScreen({ run, onOpenNofap }) {
     unsupported: "Este navegador não suporta Web Push.",
     unconfigured:
       "Falta a chave VAPID pública (src/config.js) — veja PUSH_SETUP.md.",
-    denied: "Permissão de notificação negada — libere nas configurações.",
+    denied:
+      "Permissão negada — libere em: iPhone → Ajustes → SYSTEM → Notificações · Android → Configurações do site → Notificações → Permitir. No iPhone, o app precisa estar na Tela Inicial.",
     checking: "Verificando…",
   };
 

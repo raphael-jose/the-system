@@ -63,11 +63,15 @@ export async function subscribePush() {
       "Chave VAPID pública não configurada — veja src/config.js e PUSH_SETUP.md."
     );
   if (!("Notification" in window) || window.Notification.permission === "denied")
-    throw new Error("Permissão de notificação negada pelo sistema.");
+    throw new Error(
+      "Permissão de notificação negada — libere nas configurações. iPhone: Ajustes → SYSTEM → Notificações. Android: Configurações do site → Notificações → Permitir."
+    );
   if (window.Notification.permission !== "granted") {
     const p = await window.Notification.requestPermission();
     if (p !== "granted")
-      throw new Error("Permissão de notificação negada pelo sistema.");
+      throw new Error(
+        "Permissão de notificação negada — libere nas configurações. iPhone: Ajustes → SYSTEM → Notificações. Android: Configurações do site → Notificações → Permitir."
+      );
   }
   const reg = await navigator.serviceWorker.ready;
   const existing = await reg.pushManager.getSubscription();
