@@ -1,0 +1,329 @@
+// Missões padrão do SYSTEM — todas de casa, sem equipamento.
+// Cada missão de exercício tem um guia explicativo (exercise) renderizado
+// com ilustração SVG + passos + dicas de forma.
+
+// Formato de exercise:
+//   type: chave da ilustração SVG
+//   name, equipment, sets, howTo: [passos], tips: [dicas]
+
+export const DAILY_SEED = [
+  {
+    id: "d-pushups",
+    title: "30 Flexões",
+    category: "treino",
+    xp: 20,
+    stats: { FOR: 3 },
+    description: "Três séries de 10 com 30s de descanso.",
+    training: { type: "reps", sets: 3, reps: 10 },
+    exercise: {
+      type: "pushups",
+      name: "Flexão",
+      equipment: "Nenhum — apenas o chão",
+      sets: "3 séries × 10 repetições",
+      howTo: [
+        "Deite de bruços, mãos apoiadas no chão na largura dos ombros.",
+        "Corpo reto da cabeça aos pés — contraia abdômen e glúteos.",
+        "Desça até o peito quase tocar o chão, cotovelos a 45°.",
+        "Empurre o chão até esticar os braços por completo.",
+        "Se cansar, apoie os joelhos — o importante é completar as 30.",
+      ],
+      tips: [
+        "Olhe levemente para frente, nunca para baixo.",
+        "Respire: desce inspirando, sobe expirando.",
+        "Movimento lento no controle vale mais que rápido e torto.",
+      ],
+    },
+  },
+  {
+    id: "d-squats",
+    title: "50 Agachamentos",
+    category: "treino",
+    xp: 20,
+    stats: { FOR: 2, AGI: 1 },
+    description: "Cinco séries de 10.",
+    training: { type: "reps", sets: 5, reps: 10 },
+    exercise: {
+      type: "squats",
+      name: "Agachamento",
+      equipment: "Nenhum — peso corporal",
+      sets: "5 séries × 10 repetições",
+      howTo: [
+        "Pés na largura dos ombros, pontas levemente para fora.",
+        "Braços esticados à frente para equilíbrio.",
+        "Sente como se fosse numa cadeira, joelhos acompanhando os pés.",
+        "Desça até as coxas ficarem paralelas ao chão (ou o que seu joelho permitir).",
+        "Suba empurrando pelos calcanhares, glúteo contraído.",
+      ],
+      tips: [
+        "Calcanhares sempre no chão.",
+        "Costas retas, peito aberto — nada de curvar.",
+        "Faça em frente a uma cadeira se quiser garantia de profundidade.",
+      ],
+    },
+  },
+  {
+    id: "d-cardio",
+    title: "20 min de Cardio",
+    category: "treino",
+    xp: 25,
+    stats: { AGI: 3 },
+    description: "Corrida no lugar, pular corda ou polichinelos.",
+    training: { type: "time", sets: 4, workSec: 300, unitLabel: "bloco" },
+    exercise: {
+      type: "cardio",
+      name: "Cardio em casa",
+      equipment: "Nenhum (opcional: corda)",
+      sets: "4 blocos × 5 minutos",
+      howTo: [
+        "Aqueça 2 minutos: marcha no lugar + círculos de braço.",
+        "Opção A: corra no lugar elevando bem os joelhos.",
+        "Opção B: pule corda em séries de 1 minuto.",
+        "Opção C: polichinelos em blocos de 45s.",
+        "Termine com 2 minutos caminhando no lugar, baixando o ritmo.",
+      ],
+      tips: [
+        "Se não aguentar falar durante o esforço, diminua o ritmo.",
+        "Mantenha o core firme e os ombros relaxados.",
+        "Cardio conta no total do dia — não precisa ser contínuo.",
+      ],
+    },
+  },
+  {
+    id: "d-water",
+    title: "Beber 2L de Água",
+    category: "habito",
+    xp: 15,
+    stats: { VIT: 2 },
+    description: "Um copo de 250ml a cada hora, aproximadamente.",
+    exercise: {
+      type: "water",
+      name: "Hidratação",
+      equipment: "Garrafa de 1L (encha 2 vezes)",
+      sets: "8 copos de 250ml ao longo do dia",
+      howTo: [
+        "Encha sua garrafa ao acordar — 1L de manhã, 1L à tarde.",
+        "Beba 1 copo a cada hora em ponto (use alarme se precisar).",
+        "Um copo obrigatório antes de cada refeição.",
+        "O último copo até 1h antes de dormir para não acordar à noite.",
+      ],
+      tips: [
+        "Deixe a garrafa sempre à vista — visível = bebido.",
+        "Gelo ou rodela de limão ajudam a manter o hábito.",
+        "Urina clara = hidratado. Amarela forte = beba mais.",
+      ],
+    },
+  },
+  {
+    id: "d-sleep",
+    title: "Dormir 7h+",
+    category: "habito",
+    xp: 20,
+    stats: { VIT: 3 },
+    description: "Deite cedo o suficiente para 7h de sono real.",
+    exercise: {
+      type: "sleep",
+      name: "Sono profundo",
+      equipment: "Quarto escuro e silencioso",
+      sets: "1 ciclo de 7–8 horas",
+      howTo: [
+        "Defina o horário de deitar com base na hora que precisa acordar.",
+        "Nada de tela 30 minutos antes — luz azul rouba sono.",
+        "Quarto escuro, fresco e silencioso.",
+        "Só marque a missão no dia seguinte, ao acordar bem.",
+      ],
+      tips: [
+        "Horário fixo de dormir e acordar (mesmo fim de semana).",
+        "Caféína depois das 16h atrapalha o sono.",
+        "Se não dormiu 7h, vale missão parcial? Não. O SYSTEM é rigoroso.",
+      ],
+    },
+  },
+  {
+    id: "d-study",
+    title: "20 min de Estudo/Leitura",
+    category: "estudo",
+    xp: 20,
+    stats: { INT: 3 },
+    description: "Livro, curso, artigo ou anki — qualquer aprendizado ativo.",
+    training: { type: "time", sets: 1, workSec: 1200, unitLabel: "bloco" },
+    exercise: {
+      type: "study",
+      name: "Foco mental",
+      equipment: "Material de estudo",
+      sets: "1 bloco de 20 minutos",
+      howTo: [
+        "Escolha UMA coisa para estudar — nada de multitarefa.",
+        "Celular em outro cômodo ou modo avião.",
+        "Timer de 20 minutos. Sem pausas.",
+        "No fim, escreva 1 frase: o que você aprendeu hoje.",
+      ],
+      tips: [
+        "Método pomodoro: 20min foco + 5min pausa.",
+        "Ler em papel ou e-reader rende mais que tela de celular.",
+        "Consistência diária vence maratonas de fim de semana.",
+      ],
+    },
+  },
+  {
+    id: "d-meditate",
+    title: "10 min de Meditação/Journaling",
+    category: "mente",
+    xp: 15,
+    stats: { PER: 2 },
+    description: "Silêncio, respiração ou escrever o dia.",
+    training: { type: "time", sets: 1, workSec: 600, unitLabel: "bloco" },
+    exercise: {
+      type: "meditate",
+      name: "Clareza mental",
+      equipment: "Nenhum (caderno para journaling)",
+      sets: "1 sessão de 10 minutos",
+      howTo: [
+        "Sente-se confortável, coluna ereta, olhos fechados.",
+        "Respire: 4s inalando, 6s exalando (repita).",
+        "Quando a mente vagar, volte para a respiração — sem julgamento.",
+        "Alternativa: escreva livremente por 10 min o que passou na cabeça.",
+      ],
+      tips: [
+        "Mesmo horário todo dia cria o hábito mais rápido.",
+        "10 minutos reais valem mais que 30 distraídos.",
+        "Para journaling: 'O que funcionou hoje? O que mudaria?'",
+      ],
+    },
+  },
+  {
+    id: "d-all",
+    title: "Completar Todas as Missões do Dia",
+    xp: 50,
+    stats: { SEN: 1 },
+    description: "Bônus automático ao fechar todas as diárias.",
+    category: "disciplina",
+    isBonus: true,
+  },
+];
+
+export const WEEKLY_SEED = [
+  {
+    id: "w-trainings",
+    title: "5 Treinos na Semana",
+    category: "treino",
+    xp: 150,
+    stats: { FOR: 5, AGI: 3 },
+    description: "Complete 5 missões de exercício em dias diferentes.",
+    need: 5,
+    unit: "treinos",
+  },
+  {
+    id: "w-reading",
+    title: "Ler 100 Minutos na Semana",
+    category: "estudo",
+    xp: 100,
+    stats: { INT: 5 },
+    description: "Cada sessão de estudo vale 20 min. (≈ 1 livro pequeno)",
+    need: 100,
+    unit: "min",
+  },
+  {
+    id: "w-streak",
+    title: "7 Dias de Streak",
+    category: "disciplina",
+    xp: 200,
+    stats: { SEN: 3 },
+    description: "Mantenha a sequência diária por 7 dias.",
+    need: 7,
+    unit: "dias",
+  },
+  {
+    id: "w-all-daily",
+    title: "Todas as Diárias em 4 Dias",
+    category: "disciplina",
+    xp: 120,
+    stats: { PER: 3 },
+    description: "Feche o dia inteiro 4 vezes na mesma semana.",
+    need: 4,
+    unit: "dias",
+  },
+];
+
+export const DUNGEON_SEED = [
+  {
+    id: "dg-pushups",
+    title: "1000 Flexões",
+    category: "treino",
+    goal: 1000,
+    unit: "flexões",
+    deadlineDays: 30,
+    xp: 500,
+    stats: { FOR: 15 },
+    rewardTitle: "Punhos de Ferro",
+    exercise: {
+      type: "pushups",
+      name: "Flexão",
+      howTo: [
+        "Meta diária sugerida: 34 flexões (1000 ÷ 30 dias).",
+        "Some cada flexão feita no dia — todas as séries contam.",
+        "Use o formulário de flexão das missões diárias como referência.",
+      ],
+      tips: [
+        "Dia ruim? Faça 10. Progresso é progresso.",
+        "Varie: flexão de joelhos conta igual se a forma estiver correta.",
+      ],
+    },
+  },
+  {
+    id: "dg-marathon",
+    title: "Maratona Iniciante",
+    category: "treino",
+    goal: 42,
+    unit: "km",
+    deadlineDays: 30,
+    xp: 600,
+    stats: { AGI: 15 },
+    rewardTitle: "Velocidade Sombria",
+    exercise: {
+      type: "run",
+      name: "Corrida",
+      howTo: [
+        "Meta diária sugerida: 1,4 km (42 ÷ 30 dias).",
+        "Pode somar caminhadas rápidas, corridas ou esteira.",
+        "Registre a distância total percorrida no dia.",
+      ],
+      tips: [
+        "Cadência confortável — consistência vence velocidade.",
+        "Calcule distâncias pelo tempo: ~10 min por km caminhando.",
+      ],
+    },
+  },
+  {
+    id: "dg-mind",
+    title: "Mente Afiada",
+    category: "estudo",
+    goal: 21,
+    unit: "dias de estudo",
+    deadlineDays: 21,
+    xp: 400,
+    stats: { INT: 12 },
+    rewardTitle: "Mago das Sombras",
+    exercise: {
+      type: "study",
+      name: "Disciplina mental",
+      howTo: [
+        "Estude pelo menos 20 minutos por dia, 21 dias seguidos.",
+        "Se falhar um dia, o contador de dias volta — sem exceção.",
+        "Use a missão diária de estudo como disparo.",
+      ],
+      tips: [
+        "Deixe o material pronto na noite anterior.",
+        "21 dias criam o hábito — essa é a verdadeira recompensa.",
+      ],
+    },
+  },
+];
+
+// Metadados das categorias — usados no histórico (chips + insights).
+export const CATEGORY_META = {
+  treino: { label: "Treino", color: "#22c55e" },
+  estudo: { label: "Estudo", color: "#4f8ef7" },
+  mente: { label: "Mente", color: "#a855f7" },
+  habito: { label: "Hábito", color: "#f97316" },
+  disciplina: { label: "Disciplina", color: "#facc15" },
+};

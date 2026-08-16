@@ -1,0 +1,30 @@
+{
+  "name": "system",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "SYSTEM — RPG da vida real inspirado no Solo Leveling. PWA offline.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "icons": "node scripts/generate-icons.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.2.6",
+    "@fontsource/orbitron": "^5.2.5",
+    "@fontsource/rajdhani": "^5.2.5",
+    "lucide-react": "^1.31.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "^6.0.5",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.2.1",
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^4.1.10"
+  }
+}

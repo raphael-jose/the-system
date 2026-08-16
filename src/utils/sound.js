@@ -1,0 +1,129 @@
+// Sons de UI sintetizados com Web Audio API — zero arquivos de áudio.
+// O AudioContext só existe após o primeiro gesto do usuário (regra dos browsers).
+
+let ctx = null;
+let enabled = true;
+
+export function setSoundEnabled(v) {
+  enabled = v;
+}
+
+function ensureCtx() {
+  if (ctx) return ctx;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  ctx = new AC();
+  return ctx;
+}
+
+function tone(ac, { freq, at = 0, dur = 0.12, type = "square", gain = 0.05 }) {
+  const t0 = ac.currentTime + at;
+  const osc = ac.createOscillator();
+  const g = ac.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t0);
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(gain, t0 + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(g);
+  g.connect(ac.destination);
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.02);
+}
+
+const SEQUENCES = {
+  // confirmação de missão
+  mission: [
+    { freq: 660, at: 0, dur: 0.09, type: "square", gain: 0.04 },
+    { freq: 880, at: 0.09, dur: 0.12, type: "square", gain: 0.04 },
+  ],
+  // level up: arpejo ascendente
+  levelup: [
+    { freq: 523, at: 0, dur: 0.12, type: "square", gain: 0.05 },
+    { freq: 659, at: 0.1, dur: 0.12, type: "square", gain: 0.05 },
+    { freq: 784, at: 0.2, dur: 0.12, type: "square", gain: 0.05 },
+    { freq: 1047, at: 0.3, dur: 0.25, type: "square", gain: 0.055 },
+  ],
+  // rank up: fanfarra maior com triângulo
+  rankup: [
+    { freq: 523, at: 0, dur: 0.15, type: "triangle", gain: 0.07 },
+    { freq: 659, at: 0.14, dur: 0.15, type: "triangle", gain: 0.07 },
+    { freq: 784, at: 0.28, dur: 0.15, type: "triangle", gain: 0.07 },
+    { freq: 1047, at: 0.42, dur: 0.2, type: "triangle", gain: 0.07 },
+    { freq: 1319, at: 0.58, dur: 0.35, type: "triangle", gain: 0.07 },
+    { freq: 262, at: 0.42, dur: 0.5, type: "sine", gain: 0.05 },
+  ],
+  // streak perdido: descida
+  streak: [
+    { freq: 440, at: 0, dur: 0.14, type: "sawtooth", gain: 0.035 },
+    { freq: 330, at: 0.14, dur: 0.2, type: "sawtooth", gain: 0.035 },
+  ],
+  // recompensa de dungeon (título)
+  claim: [
+    { freq: 659, at: 0, dur: 0.12, type: "triangle", gain: 0.06 },
+    { freq: 784, at: 0.1, dur: 0.12, type: "triangle", gain: 0.06 },
+    { freq: 988, at: 0.2, dur: 0.12, type: "triangle", gain: 0.06 },
+    { freq: 1319, at: 0.3, dur: 0.3, type: "triangle", gain: 0.06 },
+  ],
+  // missão semanal concluída
+  weekly: [
+    { freq: 587, at: 0, dur: 0.1, type: "square", gain: 0.04 },
+    { freq: 740, at: 0.09, dur: 0.1, type: "square", gain: 0.04 },
+    { freq: 880, at: 0.18, dur: 0.16, type: "square", gain: 0.045 },
+  ],
+  // conquista desbloqueada: sino duplo
+  ach: [
+    { freq: 1047, at: 0, dur: 0.12, type: "sine", gain: 0.06 },
+    { freq: 1319, at: 0.13, dur: 0.12, type: "sine", gain: 0.06 },
+    { freq: 1568, at: 0.26, dur: 0.3, type: "sine", gain: 0.06 },
+  ],
+  // treino guiado: tick dos últimos 3s (prep/descanso)
+  tick: [{ freq: 880, at: 0, dur: 0.06, type: "square", gain: 0.035 }],
+  // treino guiado: início de série
+  set: [
+    { freq: 660, at: 0, dur: 0.12, type: "square", gain: 0.05 },
+    { freq: 990, at: 0.12, dur: 0.16, type: "square", gain: 0.05 },
+  ],
+  // treino guiado: início de descanso
+  rest: [
+    { freq: 440, at: 0, dur: 0.1, type: "square", gain: 0.05 },
+    { freq: 330, at: 0.12, dur: 0.16, type: "square", gain: 0.05 },
+  ],
+  // treino guiado: toque de repetição (click curto)
+  tap: [
+    { freq: 900, at: 0, dur: 0.045, type: "square", gain: 0.028 },
+    { freq: 1400, at: 0.045, dur: 0.06, type: "square", gain: 0.02 },
+  ],
+  // treino guiado: meta da série atingida
+  rep: [
+    { freq: 660, at: 0, dur: 0.1, type: "square", gain: 0.045 },
+    { freq: 990, at: 0.1, dur: 0.16, type: "square", gain: 0.045 },
+  ],
+  // treino guiado: sessão concluída
+  done: [
+    { freq: 523, at: 0, dur: 0.12, type: "triangle", gain: 0.06 },
+    { freq: 659, at: 0.12, dur: 0.12, type: "triangle", gain: 0.06 },
+    { freq: 784, at: 0.24, dur: 0.12, type: "triangle", gain: 0.06 },
+    { freq: 1047, at: 0.38, dur: 0.3, type: "triangle", gain: 0.06 },
+  ],
+};
+
+export function playSound(name) {
+  if (!enabled) return;
+  const ac = ensureCtx();
+  if (!ac) return;
+  if (ac.state === "suspended") ac.resume();
+  const seq = SEQUENCES[name];
+  if (!seq) return;
+  seq.forEach((note) => tone(ac, note));
+}
+
+/**
+ * Demonstração audível: missão → level up → rank up.
+ * Usada no botão "Testar som" do Perfil (respeita o toggle).
+ */
+export function playPreview() {
+  playSound("mission");
+  setTimeout(() => playSound("levelup"), 650);
+  setTimeout(() => playSound("rankup"), 1500);
+}
