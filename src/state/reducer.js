@@ -60,6 +60,9 @@ export function defaultSave() {
       notifNoonFired: "",
       notifDungeon: false,
       notifDungeonDays: 2,
+      // Web Push (notificações com o app fechado) — estado de UI; a
+      // inscrição em si vive no PushManager do navegador.
+      pushEnabled: false,
       soundOn: true,
       sp: 0,
       spAllocated: 0,
@@ -396,6 +399,15 @@ export function reduce(state, action) {
       return [
         { ...state, player: { ...state.player, notifications: next } },
         { toast: next ? "Notificações ativadas." : "Notificações desativadas." },
+      ];
+    }
+
+    case "SET_PUSH_ENABLED": {
+      // Ativa/desativa o Web Push (app fechado). A inscrição real é feita
+      // pelo app (utils/push.js); aqui só persiste a preferência.
+      return [
+        { ...state, player: { ...state.player, pushEnabled: !!action.enabled } },
+        null,
       ];
     }
 

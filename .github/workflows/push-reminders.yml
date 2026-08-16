@@ -1,0 +1,61 @@
+# ---------------------------------------------------------------------------
+# Lembretes por Web Push — notificações que chegam com o app FECHADO.
+#
+# O navegador não permite agendar notificação local sem o app aberto; o
+# mecanismo correto é o Web Push, e o GitHub Actions serve de "servidor"
+# gratuito que dispara no horário (sem backend externo).
+#
+# ATIVAÇÃO (uma vez só, ~5 min — veja PUSH_SETUP.md):
+#   1) Gere as chaves:            npx web-push generate-vapid-keys
+#   2) Cole a pública em src/config.js (VAPID_PUBLIC_KEY) e publique o app.
+#   3) No app (Perfil → Alertas com o app fechado): ative e exporte a
+#      inscrição (JSON).
+#   4) Adicione 3 secrets no GitHub (Settings → Secrets → Actions):
+#        VAPID_PUBLIC_KEY   = chave pública
+#        VAPID_PRIVATE_KEY  = chave privada
+#        PUSH_SUBSCRIPTION  = JSON exportado no app
+#   5) Este workflow passa a rodar sozinho nos horários abaixo.
+#
+# HORÁRIOS: o cron roda em UTC. Brasil (UTC-3): 12:00 local = 15:00 UTC,
+# 20:00 local = 23:00 UTC. Ajuste os dois cron abaixo se quiser outros
+# horários (formato: 'minuto hora * * *').
+#
+# As mensagens com o app fechado são genéricas (o runner não tem acesso ao
+# seu save, que vive no celular). Com o app aberto, os lembretes continuam
+# personalizados (resumo do meio-dia, padrões do dia) como sempre foram.
+# ---------------------------------------------------------------------------
+name: Lembretes (app fechado)
+
+on:
+  schedule:
+    - cron: "0 15 * * *" # 12:00 BRT — resumo do meio-dia
+    - cron: "0 23 * * *" # 20:00 BRT — lembrete diário
+  workflow_dispatch: # permite disparar manualmente (Actions → Run workflow)
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Instalar dependências (web-push)
+        run: npm ci
+
+      - name: Lembrete do meio-dia
+        if: github.event.schedule == '0 15 * * *' || github.event_name == 'workflow_dispatch'
+        env:
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          PUSH_SUBSCRIPTION: ${{ secrets.PUSH_SUBSCRIPTION }}
+        run: node scripts/send-push.mjs --body "Meio-dia, caçador. O Sistema observa — as missões do dia aguardam."
+
+      - name: Lembrete diário
+        if: github.event.schedule == '0 23 * * *' || github.event_name == 'workflow_dispatch'
+        env:
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          PUSH_SUBSCRIPTION: ${{ secrets.PUSH_SUBSCRIPTION }}
+        run: node scripts/send-push.mjs --body "Hora do registro diário, caçador. O Sistema aguarda suas missões de hoje."

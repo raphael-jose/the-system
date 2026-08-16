@@ -13,6 +13,11 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
+      // injectManifest: o service worker é o src/sw.js (precache + Web Push
+      // para notificações com o app fechado), não o gerado automaticamente.
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.js",
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg"],
       manifest: {
@@ -44,9 +49,8 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
+      injectManifest: {
         globPatterns: ["**/*.{js,css,html,svg,png,jpg,jpeg,woff2}"],
-        navigateFallback: `${base}index.html`,
       },
       devOptions: {
         enabled: false,

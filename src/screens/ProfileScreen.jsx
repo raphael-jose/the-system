@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import {
   Award,
   Bell,
+  BellRing,
+  Copy,
   Download,
   HardDriveDownload,
   Plus,
@@ -17,6 +19,13 @@ import { STAT_NAMES, STAT_COLORS, STAT_ORDER } from "../data/statMeta";
 import { ACHIEVEMENTS } from "../data/achievements";
 import AchievementBadge from "../components/AchievementBadge";
 import { notificationSupported } from "../utils/notify";
+import {
+  pushStatus,
+  isSubscribed,
+  subscribePush,
+  unsubscribePush,
+  getSubscriptionJson,
+} from "../utils/push";
 import {
   NOTIF_SOUNDS,
   NOTIF_SOUND_NAMES,
@@ -34,6 +43,10 @@ export default function ProfileScreen({ run, onOpenNofap }) {
   const [saved, setSaved] = useState(false);
   const [installEvt, setInstallEvt] = useState(null);
   const fileRef = useRef(null);
+  const [pushState, setPushState] = useState("checking");
+  const [pushErr, setPushErr] = useState("");
+  const [subJson, setSubJson] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const sp = player?.sp || 0;
 
@@ -114,6 +127,68 @@ export default function ProfileScreen({ run, onOpenNofap }) {
     }
     run({ type: "TOGGLE_DUNGEON_NOTIF" });
   }
+
+  // ---- Web Push (notificações com o app fechado) ----
+  async function refreshPushState() {
+    setPushState(pushStatus());
+    const active = await isSubscribed().catch(() => false);
+    if (active) setPushState("active");
+  }
+
+  useEffect(() => {
+    refreshPushState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [player?.pushEnabled]);
+
+  async function togglePush() {
+    setPushErr("");
+    if (player?.pushEnabled) {
+      try {
+        await unsubscribePush();
+        run({ type: "SET_PUSH_ENABLED", enabled: false });
+        await refreshPushState();
+      } catch (e) {
+        setPushErr(e?.message || "Falha ao desativar o push.");
+      }
+      return;
+    }
+    try {
+      await subscribePush();
+      run({ type: "SET_PUSH_ENABLED", enabled: true });
+      await refreshPushState();
+    } catch (e) {
+      setPushErr(e?.message || "Falha ao ativar o push.");
+    }
+  }
+
+  async function exportSubscription() {
+    setPushErr("");
+    try {
+      setSubJson(await getSubscriptionJson());
+    } catch (e) {
+      setPushErr(e?.message || "Falha ao exportar a inscrição.");
+    }
+  }
+
+  async function copySubscription() {
+    if (!subJson) await exportSubscription();
+    try {
+      await navigator.clipboard.writeText(subJson);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setPushErr("Não foi possível copiar — selecione o texto abaixo.");
+    }
+  }
+
+  const pushOn = !!player?.pushEnabled;
+  const PUSH_HINTS = {
+    unsupported: "Este navegador não suporta Web Push.",
+    unconfigured:
+      "Falta a chave VAPID pública (src/config.js) — veja PUSH_SETUP.md.",
+    denied: "Permissão de notificação negada — libere nas configurações.",
+    checking: "Verificando…",
+  };
 
   return (
     <div className="px-4 pt-6 pb-32 space-y-4">
@@ -408,6 +483,81 @@ export default function ProfileScreen({ run, onOpenNofap }) {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Web Push — notificações com o app fechado */}
+      <div className="sys-frame p-3">
+        <div className="flex items-center gap-3">
+          <BellRing size={16} className="text-gold flex-none" />
+          <div className="flex-1">
+            <p className="font-title text-[14px] font-semibold text-primary">
+              Alertas com o app fechado
+            </p>
+            <p className="text-[11px] text-secondary">
+              Web Push — chega no horário mesmo sem abrir o app
+            </p>
+          </div>
+          <Switch
+            on={pushOn}
+            onToggle={togglePush}
+            label="push com o app fechado"
+          />
+        </div>
+
+        <div className="mt-3 pt-3 border-t border-dim space-y-2">
+          {pushState === "active" && (
+            <p className="text-[11px] text-success flex items-center gap-1.5">
+              <span className="w-[6px] h-[6px] rounded-full bg-success inline-block" />
+              Inscrição ativa neste aparelho
+            </p>
+          )}
+          {pushState === "inactive" && (
+            <p className="text-[11px] text-secondary">
+              Ative para receber os lembretes com o app fechado (Android e
+              iPhone com app na tela inicial).
+            </p>
+          )}
+          {PUSH_HINTS[pushState] && (
+            <p className="text-[11px] text-ghost">{PUSH_HINTS[pushState]}</p>
+          )}
+          {pushErr && (
+            <p className="text-[11px] text-danger">{pushErr}</p>
+          )}
+
+          <p className="text-[10px] text-ghost">
+            Os lembretes são disparados pelo GitHub Actions (workflow{" "}
+            push-reminders.yml). Depois de ativar, exporte a inscrição e
+            guarde no secret PUSH_SUBSCRIPTION — instruções em PUSH_SETUP.md.
+          </p>
+
+          {pushOn && (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={exportSubscription}
+                className="btn-system flex-1 py-2 text-[12px] flex items-center justify-center gap-1.5"
+              >
+                <Download size={13} /> Exportar inscrição
+              </button>
+              <button
+                type="button"
+                onClick={copySubscription}
+                className="btn-system ghost flex-1 py-2 text-[12px] flex items-center justify-center gap-1.5"
+              >
+                <Copy size={13} /> {copied ? "Copiado!" : "Copiar"}
+              </button>
+            </div>
+          )}
+          {subJson && (
+            <textarea
+              readOnly
+              value={subJson}
+              rows={6}
+              onFocus={(e) => e.target.select()}
+              className="w-full bg-void border border-dim rounded-[4px] px-2 py-1.5 text-[10px] font-mono text-secondary outline-none focus:border-glow"
+            />
+          )}
+        </div>
       </div>
 
       {/* Backup */}
