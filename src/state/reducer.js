@@ -8,6 +8,7 @@ import {
   achievementSpReward,
 } from "../data/achievements";
 import { rankForLevel } from "../data/ranks";
+import { NOTIF_SOUND_NAMES } from "../utils/sound";
 import { applyXp, streakMultiplier } from "../utils/xp";
 import { todayStr, yesterdayStr, weekStartStr } from "../utils/dates";
 import { nofapStreak, NOFAP_MILESTONES } from "../utils/nofap";
@@ -54,6 +55,7 @@ export function defaultSave() {
       notifications: false,
       notifTime: "20:00",
       notifLastFired: "",
+      notifSound: "chime",
       notifNoon: false,
       notifNoonFired: "",
       notifDungeon: false,
@@ -132,7 +134,14 @@ function normalizeHistory(raw) {
   const out = {};
   for (const [d, rec] of Object.entries(src)) {
     if (Array.isArray(rec)) {
-      out[d] = { ids: rec, xp: 0, hours: [], byCat: {}, sessions: [] };
+      out[d] = {
+        ids: rec,
+        xp: 0,
+        hours: [],
+        byCat: {},
+        sessions: [],
+        walks: [],
+      };
     } else {
       out[d] = {
         ids: Array.isArray(rec?.ids) ? rec.ids : [],
@@ -140,6 +149,7 @@ function normalizeHistory(raw) {
         hours: Array.isArray(rec?.hours) ? rec.hours : [],
         byCat: rec?.byCat && typeof rec.byCat === "object" ? rec.byCat : {},
         sessions: Array.isArray(rec?.sessions) ? rec.sessions : [],
+        walks: Array.isArray(rec?.walks) ? rec.walks : [],
       };
     }
   }
@@ -160,7 +170,7 @@ function historyIds(rec) {
   return Array.isArray(rec) ? rec : Array.isArray(rec?.ids) ? rec.ids : [];
 }
 function emptyDayRecord() {
-  return { ids: [], xp: 0, hours: [], byCat: {}, sessions: [] };
+  return { ids: [], xp: 0, hours: [], byCat: {}, sessions: [], walks: [] };
 }
 function addCat(byCat, cat) {
   if (!cat) return byCat;
@@ -257,6 +267,105 @@ function weeklyProgressFor(state, weekly) {
   return weekly.progress;
 }
 
+// Bônus automático de dia completo (d-all): fecha quando TODAS as diárias
+// (sem o próprio bônus) estão completas. Retorna [estado, aplicou].
+function applyAllDailyBonus(s, today, mult, reward) {
+  const dailies = s.dailyMissions;
+  const nonBonus = dailies.filter((m) => m.id !== ALL_DAILY_ID);
+  const bonus = dailies.find((m) => m.id === ALL_DAILY_ID);
+  if (!nonBonus.every((m) => m.completed)) return [s, false];
+  if (!bonus || bonus.completed) return [s, false];
+
+  const bxp = Math.round(bonus.xp * mult);
+  const bstats = { ...s.player.stats };
+  for (const [k, v] of Object.entries(bonus.stats || {})) {
+    bstats[k] = (bstats[k] || 0) + v;
+  }
+  let p = { ...s.player, stats: bstats };
+  const { player: p2, levelsGained: l2 } = applyXp(p, bxp);
+  reward.xpGained += bxp;
+  reward.statsGained = mergeStats(reward.statsGained, bonus.stats || {});
+  reward.levelsGained += l2;
+
+  // o bônus também entra no registro do dia (ids + categoria)
+  const hist = { ...(s._dailyHistory || {}) };
+  const prev = hist[today];
+  const base = prev && !Array.isArray(prev) ? prev : emptyDayRecord();
+  hist[today] = {
+    ...base,
+    ids: [...new Set([...historyIds(prev), ALL_DAILY_ID])],
+    byCat: addCat(base.byCat || {}, "disciplina"),
+  };
+  return [
+    {
+      ...s,
+      player: p2,
+      _fullDailyDays: s._fullDailyDays.includes(today)
+        ? s._fullDailyDays
+        : [...s._fullDailyDays, today],
+      _dailyHistory: hist,
+      dailyMissions: s.dailyMissions.map((m) =>
+        m.id === ALL_DAILY_ID ? { ...m, completed: true, completedAt: today } : m
+      ),
+    },
+    true,
+  ];
+}
+
+// Recalcula o progresso das semanais e auto-completa as que atingiram a meta.
+// `completedDailyId` = id da diária concluída (nulo = sem diária, ex.: check-in).
+// O reward é atualizado in-place (xp/stats/levels/weeklyCompleted).
+function updateWeeklies(s, today, mult, reward, completedDailyId) {
+  let ns = {
+    ...s,
+    weeklyMissions: s.weeklyMissions.map((w) => {
+      if (w.completed) return w;
+      let progress = w.progress;
+      if (completedDailyId) {
+        if (w.id === "w-reading" && completedDailyId === STUDY_DAILY) {
+          progress = Math.min(100, progress + 20);
+        } else {
+          progress = weeklyProgressFor(s, w);
+        }
+      }
+      return { ...w, progress };
+    }),
+  };
+
+  const completedWeekly = ns.weeklyMissions.filter(
+    (w) => !w.completed && w.progress >= (WEEKLY_NEEDS[w.id] ?? Infinity)
+  );
+  if (completedWeekly.length === 0) return [ns, reward];
+
+  const wmap = new Map(ns.weeklyMissions.map((w) => [w.id, w]));
+  for (const w of completedWeekly) {
+    const wxp = Math.round(w.xp * mult);
+    const wstats = { ...ns.player.stats };
+    for (const [k, v] of Object.entries(w.stats || {})) {
+      wstats[k] = (wstats[k] || 0) + v;
+    }
+    let p = { ...ns.player, stats: wstats };
+    const { player: p2, levelsGained: l3 } = applyXp(p, wxp);
+    reward.xpGained += wxp;
+    reward.statsGained = mergeStats(reward.statsGained, w.stats || {});
+    reward.levelsGained += l3;
+    reward.weeklyCompleted.push(w.title);
+    // a semanal auto-completa entra no registro do dia (ids + categoria)
+    const hist = { ...(ns._dailyHistory || {}) };
+    const prev = hist[today];
+    const base = prev && !Array.isArray(prev) ? prev : emptyDayRecord();
+    hist[today] = {
+      ...base,
+      ids: [...new Set([...historyIds(prev), w.id])],
+      byCat: addCat(base.byCat || {}, w.category),
+    };
+    ns = { ...ns, player: p2, _dailyHistory: hist };
+    wmap.set(w.id, { ...w, completed: true, completedAt: today });
+  }
+  ns = { ...ns, weeklyMissions: ns.weeklyMissions.map((w) => wmap.get(w.id)) };
+  return [ns, reward];
+}
+
 // Reducer principal. Retorna [estadoNovo, resultado|null].
 export function reduce(state, action) {
   switch (action.type) {
@@ -287,6 +396,16 @@ export function reduce(state, action) {
       return [
         { ...state, player: { ...state.player, notifications: next } },
         { toast: next ? "Notificações ativadas." : "Notificações desativadas." },
+      ];
+    }
+
+    case "SET_NOTIF_SOUND": {
+      // Tom de notificação (chime/beep/alarm) — tocado quando um lembrete
+      // dispara. O som nativo do sistema não é controlável pela web.
+      if (!NOTIF_SOUND_NAMES.includes(action.sound)) return [state, null];
+      return [
+        { ...state, player: { ...state.player, notifSound: action.sound } },
+        { toast: `Som de notificação: ${action.sound}.` },
       ];
     }
 
@@ -623,95 +742,11 @@ export function reduce(state, action) {
 
       // ---- Bônus: todas as diárias do dia ----
       if (list === "daily") {
-        const dailies = s.dailyMissions;
-        const nonBonus = dailies.filter((m) => m.id !== ALL_DAILY_ID);
-        const bonus = dailies.find((m) => m.id === ALL_DAILY_ID);
-        const allDone = nonBonus.every((m) => m.completed);
-        if (allDone && bonus && !bonus.completed) {
-          const bxp = Math.round(bonus.xp * mult);
-          const bstats = { ...s.player.stats };
-          for (const [k, v] of Object.entries(bonus.stats || {})) {
-            bstats[k] = (bstats[k] || 0) + v;
-          }
-          let p = { ...s.player, stats: bstats };
-          const { player: p2, levelsGained: l2 } = applyXp(p, bxp);
-          reward.xpGained += bxp;
-          reward.statsGained = mergeStats(reward.statsGained, bonus.stats || {});
-          reward.levelsGained += l2;
-          // o bônus também entra no registro do dia (ids + categoria)
-          const hist = { ...(s._dailyHistory || {}) };
-          const prev = hist[today];
-          const base = prev && !Array.isArray(prev) ? prev : emptyDayRecord();
-          hist[today] = {
-            ...base,
-            ids: [...new Set([...historyIds(prev), ALL_DAILY_ID])],
-            byCat: addCat(base.byCat || {}, "disciplina"),
-          };
-          s = {
-            ...s,
-            player: p2,
-            _fullDailyDays: s._fullDailyDays.includes(today)
-              ? s._fullDailyDays
-              : [...s._fullDailyDays, today],
-            _dailyHistory: hist,
-            dailyMissions: s.dailyMissions.map((m) =>
-              m.id === ALL_DAILY_ID
-                ? { ...m, completed: true, completedAt: today }
-                : m
-            ),
-          };
-        }
+        [s] = applyAllDailyBonus(s, today, mult, reward);
       }
 
       // ---- Progresso + auto-complete semanais ----
-      s = {
-        ...s,
-        weeklyMissions: s.weeklyMissions.map((w) => {
-          if (w.completed) return w;
-          let progress = w.progress;
-          if (list === "daily") {
-            if (w.id === "w-reading" && id === STUDY_DAILY) {
-              progress = Math.min(100, progress + 20);
-            } else {
-              progress = weeklyProgressFor(s, w);
-            }
-          }
-          return { ...w, progress };
-        }),
-      };
-
-      // Auto-completa semanais que atingiram a meta
-      const completedWeekly = s.weeklyMissions.filter(
-        (w) => !w.completed && w.progress >= (WEEKLY_NEEDS[w.id] ?? Infinity)
-      );
-      if (completedWeekly.length > 0) {
-        const wmap = new Map(s.weeklyMissions.map((w) => [w.id, w]));
-        for (const w of completedWeekly) {
-          const wxp = Math.round(w.xp * mult);
-          const wstats = { ...s.player.stats };
-          for (const [k, v] of Object.entries(w.stats || {})) {
-            wstats[k] = (wstats[k] || 0) + v;
-          }
-          let p = { ...s.player, stats: wstats };
-          const { player: p2, levelsGained: l3 } = applyXp(p, wxp);
-          reward.xpGained += wxp;
-          reward.statsGained = mergeStats(reward.statsGained, w.stats || {});
-          reward.levelsGained += l3;
-          reward.weeklyCompleted.push(w.title);
-          // a semanal auto-completa entra no registro do dia (ids + categoria)
-          const hist = { ...(s._dailyHistory || {}) };
-          const prev = hist[today];
-          const base = prev && !Array.isArray(prev) ? prev : emptyDayRecord();
-          hist[today] = {
-            ...base,
-            ids: [...new Set([...historyIds(prev), w.id])],
-            byCat: addCat(base.byCat || {}, w.category),
-          };
-          s = { ...s, player: p2, _dailyHistory: hist };
-          wmap.set(w.id, { ...w, completed: true, completedAt: today });
-        }
-        s = { ...s, weeklyMissions: s.weeklyMissions.map((w) => wmap.get(w.id)) };
-      }
+      [s] = updateWeeklies(s, today, mult, reward, id);
 
       // ---- SP por level ganho (distribuição manual) ----
       const spGained = reward.levelsGained * SP_PER_LEVEL;
@@ -926,6 +961,40 @@ export function reduce(state, action) {
           toast: bonus
             ? `Higiene completa: 3/3 escovações. +${ORAL_XP + bonusXp} XP · +1 VIT · +1 SEN`
             : `Escovação registrada (${label}). +${ORAL_XP} XP · +1 VIT`,
+        },
+      ];
+    }
+
+    case "SAVE_WALK": {
+      // Registra uma caminhada no dia (passos, km, duração e rota GPS).
+      const today = todayStr();
+      const sec = Math.max(0, Math.floor(Number(action.sec) || 0));
+      const steps = Math.max(0, Math.floor(Number(action.steps) || 0));
+      const km = Math.max(0, Number(action.km) || 0);
+      const route = Array.isArray(action.route)
+        ? action.route
+            .filter((p) => Array.isArray(p) && p.length >= 2)
+            .map((p) => [Number(p[0]), Number(p[1])])
+            .filter((p) => p.every((n) => Number.isFinite(n)))
+            .slice(-500) // limita a rota salva (a mais recente)
+        : [];
+      if (sec <= 0 && steps <= 0 && km <= 0) return [state, null];
+      const hist = { ...(state._dailyHistory || {}) };
+      const prev = hist[today];
+      const base = prev && !Array.isArray(prev) ? prev : emptyDayRecord();
+      hist[today] = {
+        ...base,
+        walks: [
+          ...(base.walks || []),
+          { title: "Caminhada", sec, steps, km, route },
+        ],
+      };
+      return [
+        { ...state, _dailyHistory: hist },
+        {
+          toast: `Caminhada registrada: ${steps.toLocaleString(
+            "pt-BR"
+          )} passos · ${km.toFixed(2)} km`,
         },
       ];
     }

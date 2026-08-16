@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { GameProvider, useGame } from "./hooks/useGame.jsx";
 import { todayStr, msUntilMidnight } from "./utils/dates";
-import { playSound, setSoundEnabled } from "./utils/sound";
+import {
+  playNotifySound,
+  playSound,
+  setSoundEnabled,
+} from "./utils/sound";
 import { setVoiceEnabled } from "./utils/voice";
 import { dungeonsExpiring, noonSummary, sendNotification } from "./utils/notify";
 import { patternSentence, encouragementMessage } from "./utils/history";
@@ -18,6 +22,7 @@ import HistoryScreen from "./screens/HistoryScreen";
 import AchievementsScreen from "./screens/AchievementsScreen";
 import ProfileScreen from "./screens/ProfileScreen";
 import NofapScreen from "./screens/NofapScreen";
+import WalkScreen from "./screens/WalkScreen";
 
 export default function App() {
   return (
@@ -33,6 +38,7 @@ function Shell() {
   const [overlay, setOverlay] = useState(null);
   const [achBatch, setAchBatch] = useState(null);
   const [nofapOpen, setNofapOpen] = useState(false);
+  const [walkOpen, setWalkOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [streakFlash, setStreakFlash] = useState(false);
   const saveRef = useRef(save);
@@ -89,7 +95,10 @@ function Shell() {
       }
       const sent = sendNotification("SYSTEM", body);
       // só marca como enviado se a notificação realmente disparou
-      if (sent) run({ type: "MARK_NOTIF_FIRED" });
+      if (sent) {
+        run({ type: "MARK_NOTIF_FIRED" });
+        playNotifySound(saveRef.current?.player?.notifSound);
+      }
     };
     check();
     const iv = setInterval(check, 30000);
@@ -112,7 +121,10 @@ function Shell() {
       const now = new Date();
       if (now.getHours() < 12) return;
       const sent = sendNotification("SYSTEM", noonSummary(s, todayStr()));
-      if (sent) run({ type: "MARK_NOON_FIRED" });
+      if (sent) {
+        run({ type: "MARK_NOON_FIRED" });
+        playNotifySound(saveRef.current?.player?.notifSound);
+      }
     };
     check();
     const iv = setInterval(check, 30000);
@@ -148,7 +160,10 @@ function Shell() {
           `Dungeon "${d.title}" ${when}. O Sistema aguarda.`
         );
         // só registra como avisado se a notificação realmente disparou
-        if (sent) run({ type: "MARK_DUNGEON_NOTIFIED", id: d.id });
+        if (sent) {
+          run({ type: "MARK_DUNGEON_NOTIFIED", id: d.id });
+          playNotifySound(saveRef.current?.player?.notifSound);
+        }
       }
     };
     check();
@@ -253,6 +268,7 @@ function Shell() {
             run={run}
             onGoMissions={() => setTab("missions")}
             onGoDungeons={() => setTab("dungeons")}
+            onOpenWalk={() => setWalkOpen(true)}
           />
         )}
         {tab === "missions" && <MissionsScreen run={run} />}
@@ -284,6 +300,10 @@ function Shell() {
 
       {nofapOpen && (
         <NofapScreen run={run} onClose={() => setNofapOpen(false)} />
+      )}
+
+      {walkOpen && (
+        <WalkScreen run={run} onClose={() => setWalkOpen(false)} />
       )}
     </div>
   );

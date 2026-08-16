@@ -17,7 +17,12 @@ import { STAT_NAMES, STAT_COLORS, STAT_ORDER } from "../data/statMeta";
 import { ACHIEVEMENTS } from "../data/achievements";
 import AchievementBadge from "../components/AchievementBadge";
 import { notificationSupported } from "../utils/notify";
-import { playPreview } from "../utils/sound";
+import {
+  NOTIF_SOUNDS,
+  NOTIF_SOUND_NAMES,
+  playNotifySound,
+  playPreview,
+} from "../utils/sound";
 import { todayStr } from "../utils/dates";
 import { nofapStreak } from "../utils/nofap";
 
@@ -278,6 +283,43 @@ export default function ProfileScreen({ run, onOpenNofap }) {
         >
           <Volume2 size={12} /> Testar som (missão · level up · rank up)
         </button>
+
+        {/* Tom de notificação personalizado */}
+        <div className="mt-3">
+          <p className="text-[10px] uppercase tracking-[0.12em] text-secondary mb-1.5">
+            Som de notificação
+          </p>
+          <div className="grid grid-cols-3 gap-1.5">
+            {NOTIF_SOUND_NAMES.map((name) => {
+              const meta = NOTIF_SOUNDS[name];
+              const active = (player?.notifSound || "chime") === name;
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => {
+                    run({ type: "SET_NOTIF_SOUND", sound: name });
+                    playNotifySound(name);
+                  }}
+                  aria-pressed={active}
+                  aria-label={`Som de notificação: ${meta.label}`}
+                  className={`rounded-[4px] border py-1.5 text-[11px] font-title uppercase tracking-wider transition-colors ${
+                    active
+                      ? "border-glow text-blue glow-blue"
+                      : "border-dim text-secondary"
+                  }`}
+                >
+                  {meta.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-[10px] text-ghost mt-1.5">
+            Toca no app quando um lembrete dispara, com vibração própria. O som
+            nativo da notificação do celular é controlado pelo sistema — não dá
+            para trocar pela web.
+          </p>
+        </div>
       </div>
 
       {/* Notificações */}

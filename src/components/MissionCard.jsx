@@ -89,6 +89,11 @@ export default function MissionCard({ mission, type, onComplete, onTrain, isBonu
                 BÔNUS
               </span>
             )}
+            {mission.timeLabel && !bonus && (
+              <span className="ml-2 align-middle inline-block rounded-[3px] border border-dim px-1.5 py-[1px] font-display text-[9px] tracking-[0.18em] text-secondary uppercase">
+                {mission.timeLabel}
+              </span>
+            )}
           </span>
 
           {mission.description && (

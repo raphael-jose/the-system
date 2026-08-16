@@ -1,19 +1,25 @@
-import { Check, Flame, ListChecks, Shield, Sparkles, Timer } from "lucide-react";
+import { useState } from "react";
+import { Check, Flame, Footprints, ListChecks, Shield, Sparkles, Timer } from "lucide-react";
 import { useGame } from "../hooks/useGame.jsx";
 import { usePlayer } from "../hooks/usePlayer";
 import { useXP } from "../hooks/useXP";
 import { useMissions } from "../hooks/useMissions";
 import { useDungeons } from "../hooks/useDungeons";
 import { nextDungeonDeadline } from "../utils/notify";
+import { todayStr } from "../utils/dates";
+import { formatSteps, walkTotals } from "../utils/walk";
 import { ORAL_SLOTS } from "../data/oralCare";
+import OralBrushModal from "../components/OralBrushModal";
 import RankBadge from "../components/RankBadge";
 import XpBar from "../components/XpBar";
 import StatBar from "../components/StatBar";
 import { STAT_ORDER } from "../data/statMeta";
 import { streakMultiplier } from "../utils/xp";
 
-export default function StatusScreen({ run, onGoMissions, onGoDungeons }) {
+export default function StatusScreen({ run, onGoMissions, onGoDungeons, onOpenWalk }) {
   const { save } = useGame();
+  // escovação em andamento (slot aberto no modal com temporizador)
+  const [brushing, setBrushing] = useState(null);
   const oral = save?.player?.oral || { date: "", slots: [false, false, false], fullDays: 0 };
   const { player } = usePlayer();
   const { rank, level, xp, xpToNext, pct, multiplier } = useXP();
@@ -57,6 +63,19 @@ export default function StatusScreen({ run, onGoMissions, onGoDungeons }) {
           ? "0d"
           : `${nextDungeon.daysLeft}d`
     : null;
+
+  // caminhadas de hoje (pedômetro): soma passos/km do registro do dia
+  const todayWalk = (() => {
+    const rec = save?._dailyHistory?.[todayStr()];
+    const walks = Array.isArray(rec?.walks) ? rec.walks : [];
+    let steps = 0;
+    let km = 0;
+    for (const w of walks) {
+      steps += Math.max(0, Number(w.steps) || 0);
+      km += Math.max(0, Number(w.km) || 0);
+    }
+    return { steps, km };
+  })();
 
   const doneToday = dailyMissions.filter((m) => m.completed).length;
   const totalDaily = dailyMissions.length;
@@ -213,23 +232,65 @@ export default function StatusScreen({ run, onGoMissions, onGoDungeons }) {
               <button
                 key={s.id}
                 type="button"
-                onClick={() => run({ type: "ORAL_BRUSH", slot: s.id })}
+                onClick={() => setBrushing(s.id)}
                 disabled={done}
-                aria-label={`Escovar os dentes — ${s.label}`}
-                className={`flex items-center justify-center gap-1 rounded-[4px] border py-2 text-[11px] font-title uppercase tracking-wider transition-colors ${
+                aria-label={`Escovar os dentes — ${s.label} (${s.hint})`}
+                className={`flex flex-col items-center justify-center gap-0.5 rounded-[4px] border py-2 px-1 text-[11px] font-title uppercase tracking-wider transition-colors ${
                   done
                     ? "border-success text-success bg-success/10"
                     : "border-dim text-secondary active:border-glow active:text-primary"
                 }`}
               >
-                {done && <Check size={12} />}
-                {s.label}
+                <span className="flex items-center gap-1">
+                  {done && <Check size={12} />}
+                  {s.label}
+                </span>
+                <span
+                  className={`text-[8px] normal-case tracking-normal ${
+                    done ? "text-success/70" : "text-ghost"
+                  }`}
+                >
+                  {s.hint}
+                </span>
               </button>
             );
           })}
         </div>
         <p className="text-[10px] text-ghost mt-1.5">
-          Cada escovação: +5 XP · +1 VIT · bônus 3/3: +10 XP · +1 SEN
+          Cada escovação: 2 min de relógio → +5 XP · +1 VIT · bônus 3/3: +10 XP ·
+          +1 SEN
+        </p>
+      </div>
+
+      {/* Modal de escovação com temporizador (só marca quando completa) */}
+      {brushing != null && (
+        <OralBrushModal
+          slotId={brushing}
+          onDone={(slot) => run({ type: "ORAL_BRUSH", slot })}
+          onClose={() => setBrushing(null)}
+        />
+      )}
+
+      {/* Pedômetro — caminhada com GPS */}
+      <div className="sys-frame p-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Footprints size={15} className="text-blue flex-none" />
+            <span className="text-label">Pedômetro</span>
+          </div>
+          <span className="font-display text-[11px] text-secondary tabular">
+            {formatSteps(todayWalk.steps)} passos · {todayWalk.km.toFixed(2)} km
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenWalk}
+          className="btn-system w-full py-2 text-[12px]"
+        >
+          Iniciar caminhada
+        </button>
+        <p className="text-[10px] text-ghost mt-1.5">
+          Passos por sensor de movimento e rota por GPS — registra no Histórico.
         </p>
       </div>
 

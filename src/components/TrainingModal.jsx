@@ -228,6 +228,17 @@ export default function TrainingModal({
       {/* ready */}
       {phase === "ready" && (
         <div className="text-center py-2">
+          {mission.exercise?.image && (
+            <img
+              src={mission.exercise.image}
+              alt={mission.exercise.name}
+              className="mx-auto rounded-[4px] border border-dim object-cover mb-3"
+              style={{
+                width: immersive ? "min(36vmin, 36vh)" : 132,
+                height: immersive ? "min(36vmin, 36vh)" : 132,
+              }}
+            />
+          )}
           <p className={`${immersive ? "text-[3vmin] mb-[3vmin]" : "text-[12px] mb-3"} text-secondary`}>
             {isReps
               ? `${totalSets} séries × ${t.reps} repetições`

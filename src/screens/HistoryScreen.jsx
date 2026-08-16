@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Dumbbell, Flame } from "lucide-react";
+import { Dumbbell, Flame, Footprints } from "lucide-react";
 import { useGame } from "../hooks/useGame.jsx";
 import { BarChart, SessionStrip, StreakStrip } from "../components/HistoryChart";
 import InsightsPanel from "../components/InsightsPanel";
@@ -12,6 +12,7 @@ import {
   sessionTotals,
 } from "../utils/history";
 import { CATEGORY_META } from "../data/defaultMissions";
+import { formatSteps, walkTotals } from "../utils/walk";
 
 export default function HistoryScreen() {
   const { save } = useGame();
@@ -45,6 +46,19 @@ export default function HistoryScreen() {
   const longest = longestStreak(series);
 
   const training = useMemo(() => sessionTotals(series), [series]);
+  const walking = useMemo(() => walkTotals(series), [series]);
+
+  // Últimas 3 caminhadas (mais recentes primeiro)
+  const recentWalks = useMemo(() => {
+    const out = [];
+    for (let i = series.length - 1; i >= 0 && out.length < 3; i--) {
+      for (const w of series[i].walks || []) {
+        out.push({ ...w, date: series[i].date });
+        if (out.length >= 3) break;
+      }
+    }
+    return out;
+  }, [series]);
 
   // Últimas 3 sessões guiadas (mais recentes primeiro)
   const recentSessions = useMemo(() => {
@@ -153,6 +167,53 @@ export default function HistoryScreen() {
               <span className="flex items-center gap-1">
                 <i className="w-2 h-2 inline-block bg-purple rounded-[1px]" />{" "}
                 treino no dia
+              </span>
+              <span className="flex items-center gap-1">
+                <i className="w-2 h-2 inline-block bg-gold rounded-[1px]" /> hoje
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Caminhada — pedômetro + GPS */}
+      <div className="sys-frame p-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-label flex items-center gap-1.5">
+            <Footprints size={13} /> Caminhada
+          </p>
+          <span className="font-display text-[13px] text-blue tabular">
+            {walking.walks} {walking.walks === 1 ? "caminhada" : "caminhadas"} ·{" "}
+            {formatSteps(walking.steps)} passos · {walking.km.toFixed(2)} km
+          </span>
+        </div>
+
+        {walking.walks === 0 ? (
+          <p className="text-[11px] text-ghost leading-relaxed">
+            Inicie uma caminhada no card "Pedômetro" do Status (passos por
+            sensor de movimento e rota por GPS) para o Sistema registrar aqui.
+          </p>
+        ) : (
+          <>
+            <ul className="space-y-1.5 pt-1">
+              {recentWalks.map((w, i) => (
+                <li
+                  key={i}
+                  className="flex items-center justify-between gap-2 text-[11px]"
+                >
+                  <span className="text-primary truncate">
+                    {formatShort(w.date)} · {formatSteps(w.steps)} passos
+                  </span>
+                  <span className="text-secondary tabular whitespace-nowrap">
+                    {w.km.toFixed(2)} km · {formatDuration(w.sec)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex gap-3 text-[10px] text-ghost">
+              <span className="flex items-center gap-1">
+                <i className="w-2 h-2 inline-block bg-blue rounded-[1px]" />{" "}
+                rota registrada no dia
               </span>
               <span className="flex items-center gap-1">
                 <i className="w-2 h-2 inline-block bg-gold rounded-[1px]" /> hoje

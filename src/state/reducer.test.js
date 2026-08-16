@@ -14,9 +14,10 @@ function complete(s, list, id) {
 }
 
 const DAILY_IDS = [
+  "d-cardio",
   "d-pushups",
   "d-squats",
-  "d-cardio",
+  "d-abs",
   "d-water",
   "d-sleep",
   "d-study",
@@ -54,7 +55,7 @@ describe("criação", () => {
       PER: 10,
       SEN: 10,
     });
-    expect(s.dailyMissions).toHaveLength(8);
+    expect(s.dailyMissions).toHaveLength(9);
     expect(s.weeklyMissions).toHaveLength(4);
     expect(s.dungeons).toHaveLength(3);
     expect(s.lastDailyReset).toBe(todayStr());
@@ -72,8 +73,32 @@ describe("criação", () => {
     expect(m.player.level).toBe(3);
     expect(m.player.stats.FOR).toBe(15);
     expect(m.player.stats.AGI).toBe(10); // padrão preservado
-    expect(m.dailyMissions).toHaveLength(8); // seed re-adicionado
+    expect(m.dailyMissions).toHaveLength(9); // seed re-adicionado
     expect(m._fullDailyDays).toEqual([]);
+  });
+
+  it("exercícios em ordem cronológica do dia, com abdominal e imagens", () => {
+    const s = create();
+    const exIds = s.dailyMissions
+      .filter((m) => m.exercise?.image)
+      .map((m) => m.id);
+    // cronologia: manhã (cardio) → tarde (força + abdominal)
+    expect(exIds).toEqual(["d-cardio", "d-pushups", "d-squats", "d-abs"]);
+
+    const abs = s.dailyMissions.find((m) => m.id === "d-abs");
+    expect(abs.title).toContain("Abdominais");
+    expect(abs.category).toBe("treino");
+    expect(abs.timeOfDay).toBe("tarde");
+    expect(abs.training).toEqual({ type: "reps", sets: 3, reps: 10 });
+    expect(abs.exercise.image).toBe("exercises/situp-34.jpg");
+    expect(abs.exercise.type).toBe("abs");
+    expect(abs.stats).toEqual({ FOR: 2, VIT: 1 });
+
+    // toda missão de exercício tem imagem de referência + horário do dia
+    for (const m of s.dailyMissions.filter((x) => x.exercise?.image)) {
+      expect(m.exercise.image).toMatch(/^exercises\/.+\.jpg$/);
+      expect(m.timeLabel).toBeTruthy();
+    }
   });
 });
 
@@ -114,10 +139,10 @@ describe("missões diárias", () => {
     const full = completeAllDailies(create());
     expect(full.dailyMissions.find((m) => m.id === "d-all").completed).toBe(true);
     expect(full._fullDailyDays).toContain(todayStr());
-    // 7 diárias = 135 XP + bônus 50 = 185 XP → level 2, sobra 85
+    // 8 diárias = 155 XP + bônus 50 = 205 XP → level 2, sobra 105
     expect(full.player.level).toBe(2);
-    expect(full.player.xp).toBe(85);
-    expect(full.player.stats.SEN).toBe(11);
+    expect(full.player.xp).toBe(105);
+    expect(full.player.stats.SEN).toBe(11); // +1 do bônus de dia completo
   });
 });
 
@@ -318,13 +343,17 @@ describe("SP (pontos de atributo)", () => {
   it("ganha 3 SP por level e distribui manualmente", () => {
     vi.useFakeTimers();
     vi.setSystemTime(MON);
-    const full = completeAllDailies(create());
-    expect(full.player.level).toBe(2);
-    expect(full.player.sp).toBe(3); // 1 level × 3
+    // sobe de level com UMA missão (sem disparar Sobrecarga) → exatamente 3 SP
+    let s = create();
+    s.player.xp = 90;
+    const [s1, r1] = complete(s, "daily", "d-pushups"); // +20 XP → level 2
+    expect(r1.levelsGained).toBe(1);
+    expect(s1.player.level).toBe(2);
+    expect(s1.player.sp).toBe(3); // 1 level × 3
 
-    const [s2] = reduce(full, { type: "ADD_STAT_POINT", stat: "FOR" });
+    const [s2] = reduce(s1, { type: "ADD_STAT_POINT", stat: "FOR" });
     expect(s2.player.sp).toBe(2);
-    expect(s2.player.stats.FOR).toBe(16);
+    expect(s2.player.stats.FOR).toBe(14); // 13 (flexão) + 1 SP
 
     const [s3] = reduce(s2, { type: "ADD_STAT_POINT", stat: "FOR" });
     const [s4] = reduce(s3, { type: "ADD_STAT_POINT", stat: "FOR" });
@@ -334,7 +363,7 @@ describe("SP (pontos de atributo)", () => {
     // sem SP → no-op
     const [s6, r6] = reduce(s5, { type: "ADD_STAT_POINT", stat: "FOR" });
     expect(r6).toBeNull();
-    expect(s6.player.stats.FOR).toBe(18);
+    expect(s6.player.stats.FOR).toBe(16);
 
     // atributo inválido → no-op
     const [s7, r7] = reduce(s5, { type: "ADD_STAT_POINT", stat: "XYZ" });
@@ -357,8 +386,8 @@ describe("SP (pontos de atributo)", () => {
   it("distribuição automática gasta tudo nos atributos mais fracos", () => {
     vi.useFakeTimers();
     vi.setSystemTime(MON);
-    // dia completo → level 2 → 3 SP; atributos: FOR 15, AGI 14, VIT 15,
-    // INT 13, PER 12, SEN 11 → mais fracos: SEN, PER
+    // dia completo → level 2 → 3 SP; atributos: FOR 17, AGI 14, VIT 16,
+    // INT 13, PER 12, SEN 11 → mais fracos: SEN, PER (empate pela ordem)
     const full = completeAllDailies(create());
     expect(full.player.sp).toBe(3);
     const [s2, r] = reduce(full, { type: "AUTO_DISTRIBUTE_SP" });
@@ -367,6 +396,7 @@ describe("SP (pontos de atributo)", () => {
     expect(s2.player.spAllocated).toBe(3);
     expect(s2.player.stats.SEN).toBe(13);
     expect(s2.player.stats.PER).toBe(13);
+    expect(s2.player.stats.INT).toBe(13);
     // sem SP → no-op
     const [s3, r3] = reduce(s2, { type: "AUTO_DISTRIBUTE_SP" });
     expect(r3).toBeNull();
@@ -423,12 +453,12 @@ describe("histórico de sessão", () => {
     vi.useFakeTimers();
     vi.setSystemTime(MON);
     const full = completeAllDailies(create());
-    // 7 diárias = 135 XP + bônus 50 = 185, 8 ids (inclui o bônus d-all)
+    // 8 diárias = 155 XP + bônus 50 = 205, 9 ids (inclui o bônus d-all)
     const rec = full._dailyHistory[todayStr()];
-    expect(rec.xp).toBe(185);
-    expect(rec.ids).toHaveLength(8);
+    expect(rec.xp).toBe(205);
+    expect(rec.ids).toHaveLength(9);
     expect(rec.ids).toContain("d-all");
-    expect(rec.byCat.disciplina).toBe(1);
+    expect(rec.byCat.disciplina).toBe(1); // só o bônus d-all
   });
 
   it("registra sessão de treino guiado com duração e séries", () => {
@@ -514,6 +544,7 @@ describe("histórico de sessão", () => {
       hours: [],
       byCat: {},
       sessions: [],
+      walks: [],
     });
   });
 
@@ -637,7 +668,7 @@ describe("conquistas (achievements)", () => {
       }
       (r?.achievementsGained || []).forEach((a) => gained.add(a));
     }
-    // 7 diárias + bônus d-all + 4 semanais = 12 ids no dia
+    // 9 diárias + bônus d-all + 4 semanais = 14 ids no dia
     expect(cur._dailyHistory[todayStr()].ids.length).toBeGreaterThanOrEqual(10);
     expect(cur.weeklyMissions.filter((w) => w.completed)).toHaveLength(4);
     expect(cur.achievements.map((a) => a.id)).toContain("day-full-10");
@@ -765,6 +796,67 @@ describe("disciplina (NoFap)", () => {
   });
 });
 
+describe("caminhada (pedômetro + GPS)", () => {
+  it("registra passos, km, duração e rota no dia", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(MON);
+    let s = create();
+    const [s1, r] = reduce(s, {
+      type: "SAVE_WALK",
+      sec: 720,
+      steps: 2450,
+      km: 1.83,
+      route: [
+        [-23.55, -46.63],
+        [-23.551, -46.63],
+        [-23.552, -46.63],
+      ],
+    });
+    expect(r.toast).toContain("2.450 passos");
+    const rec = s1._dailyHistory[todayStr()];
+    expect(rec.walks).toHaveLength(1);
+    expect(rec.walks[0]).toMatchObject({
+      title: "Caminhada",
+      sec: 720,
+      steps: 2450,
+      km: 1.83,
+    });
+    expect(rec.walks[0].route).toHaveLength(3);
+  });
+
+  it("sanitiza valores inválidos e limita a rota a 500 pontos", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(MON);
+    let s = create();
+    const longRoute = Array.from({ length: 700 }, (_, i) => [-23.5, -46.6 + i / 100000]);
+    const [s1] = reduce(s, {
+      type: "SAVE_WALK",
+      sec: -10,
+      steps: "abc",
+      km: 2,
+      route: [...longRoute, [null, 1], [1], "x"],
+    });
+    const w = s1._dailyHistory[todayStr()].walks[0];
+    expect(w.sec).toBe(0);
+    expect(w.steps).toBe(0);
+    expect(w.km).toBe(2);
+    expect(w.route).toHaveLength(500);
+  });
+
+  it("acumula caminhadas no mesmo dia e ignora sessão vazia", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(MON);
+    let s = create();
+    s = reduce(s, { type: "SAVE_WALK", sec: 300, steps: 500, km: 0.4 })[0];
+    s = reduce(s, { type: "SAVE_WALK", sec: 400, steps: 800, km: 0.6 })[0];
+    expect(s._dailyHistory[todayStr()].walks).toHaveLength(2);
+
+    const [s2, r2] = reduce(s, { type: "SAVE_WALK", sec: 0, steps: 0, km: 0 });
+    expect(r2).toBeNull();
+    expect(s2._dailyHistory[todayStr()].walks).toHaveLength(2);
+  });
+});
+
 describe("higiene bucal (escovação 3x ao dia)", () => {
   it("cada escovação: +5 XP, +1 VIT, histórico e uma vez por slot", () => {
     vi.useFakeTimers();
@@ -876,6 +968,26 @@ describe("configurações", () => {
 
     const [s4] = reduce(s3, { type: "MARK_NOTIF_FIRED" });
     expect(s4.player.notifLastFired).toBe(todayStr());
+  });
+
+  it("som de notificação: padrão chime, aceita os 3 tons e rejeita inválido", () => {
+    const s = create();
+    expect(s.player.notifSound).toBe("chime");
+
+    const [s2, r2] = reduce(s, { type: "SET_NOTIF_SOUND", sound: "alarm" });
+    expect(s2.player.notifSound).toBe("alarm");
+    expect(r2.toast).toContain("alarm");
+
+    const [s3, r3] = reduce(s2, { type: "SET_NOTIF_SOUND", sound: "xyz" });
+    expect(r3).toBeNull();
+    expect(s3.player.notifSound).toBe("alarm");
+
+    const [s4] = reduce(s3, { type: "SET_NOTIF_SOUND", sound: "beep" });
+    expect(s4.player.notifSound).toBe("beep");
+
+    // migração preserva o valor escolhido
+    const m = migrate({ player: { name: "X", notifSound: "beep" } });
+    expect(m.player.notifSound).toBe("beep");
   });
 
   it("resumo do meio-dia: toggle e marca como enviado uma vez por dia", () => {

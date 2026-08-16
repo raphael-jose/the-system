@@ -88,10 +88,13 @@ export function sendNotification(title, body) {
   if (typeof window === "undefined" || !("Notification" in window)) return false;
   if (Notification.permission !== "granted") return false;
   try {
+    // ícone resolve em relação à página atual — funciona na raiz E em
+    // subpasta (ex.: GitHub Pages /the-system/), onde "/icons" quebraria
+    const iconUrl = new URL("icons/icon-192.png", window.location.href).href;
     new Notification(title, {
       body,
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
+      icon: iconUrl,
+      badge: iconUrl,
     });
     return true;
   } catch {

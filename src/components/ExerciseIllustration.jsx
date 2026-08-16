@@ -81,6 +81,26 @@ function Cardio() {
   );
 }
 
+function Abs() {
+  return (
+    <g>
+      <Ground y={104} />
+      {/* colchonete */}
+      <rect x={24} y={96} width={72} height={7} rx={2} fill="#161625" stroke="#1e3a6e" strokeWidth={2} />
+      {/* pernas dobradas */}
+      <line x1={60} y1={76} x2={46} y2={88} stroke={STROKE} strokeWidth={SW} strokeLinecap="round" />
+      <line x1={60} y1={76} x2={74} y2={88} stroke={STROKE} strokeWidth={SW} strokeLinecap="round" />
+      {/* tronco erguido (sit-up curto) */}
+      <line x1={60} y1={74} x2={60} y2={44} stroke={STROKE} strokeWidth={SW} strokeLinecap="round" />
+      {/* braços cruzados */}
+      <path d="M52 52 Q60 58 68 52" stroke={ACCENT} strokeWidth={SW} fill="none" strokeLinecap="round" />
+      <Head cx={60} cy={34} />
+      {/* seta de movimento */}
+      <path d="M96 60 q6 6 0 12 q-6 -6 0 -12" fill={GOLD} />
+    </g>
+  );
+}
+
 function Run() {
   return (
     <g>
@@ -188,6 +208,7 @@ function Meditate() {
 const ILLUSTRATIONS = {
   pushups: Pushups,
   squats: Squats,
+  abs: Abs,
   cardio: Cardio,
   run: Run,
   water: Water,
@@ -235,8 +256,21 @@ export function ExerciseGuide({ exercise, defaultOpen = false }) {
       {open && (
         <div className="mt-3 animate-fade-in">
           <div className="flex gap-4 items-start">
-            <div className="sys-frame p-2 shrink-0 bg-void">
-              <ExerciseIllustration type={exercise.type} size={88} />
+            <div className="shrink-0">
+              {exercise.image ? (
+                <div className="sys-frame p-1 bg-void">
+                  <img
+                    src={exercise.image}
+                    alt={exercise.name}
+                    className="w-[104px] h-[104px] rounded-[3px] object-cover"
+                    loading="lazy"
+                  />
+                </div>
+              ) : (
+                <div className="sys-frame p-2 bg-void">
+                  <ExerciseIllustration type={exercise.type} size={88} />
+                </div>
+              )}
             </div>
             <div className="min-w-0 flex-1 space-y-1 pt-1">
               <p className="font-title text-[15px] font-semibold text-primary">

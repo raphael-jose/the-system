@@ -51,6 +51,7 @@ function dayRecord(dailyHistory, date) {
     hours: Array.isArray(rec?.hours) ? rec.hours : [],
     byCat: rec?.byCat && typeof rec.byCat === "object" ? rec.byCat : {},
     sessions: Array.isArray(rec?.sessions) ? rec.sessions : [],
+    walks: Array.isArray(rec?.walks) ? rec.walks : [],
   };
 }
 
@@ -71,6 +72,7 @@ export function buildSeries(dailyHistory, days = HISTORY_DAYS) {
       byCat: rec.byCat,
       hours: rec.hours,
       sessions: rec.sessions,
+      walks: rec.walks,
       weekday: weekdayOf(date),
       isToday: date === today,
     });

@@ -116,26 +116,26 @@ describe("noonSummary", () => {
   });
 
   it("dia parado: nenhuma missão registrada", () => {
-    const msg = noonSummary(save([], 0, 0, 8), "2026-08-16");
+    const msg = noonSummary(save([], 0, 0, 9), "2026-08-16");
     expect(msg).toBe(
-      "Meio-dia, caçador. Nenhuma missão registrada ainda. 8 aguardando — o Sistema observa."
+      "Meio-dia, caçador. Nenhuma missão registrada ainda. 9 aguardando — o Sistema observa."
     );
   });
 
   it("dia parcial: resume feito, XP e pendentes", () => {
-    const msg = noonSummary(save(["a", "b", "c"], 95, 3, 8), "2026-08-16");
+    const msg = noonSummary(save(["a", "b", "c"], 95, 3, 9), "2026-08-16");
     expect(msg).toBe(
-      "Meio-dia, caçador. Hoje: 3/8 missões · +95 XP. Faltam 5 — o Sistema aguarda."
+      "Meio-dia, caçador. Hoje: 3/9 missões · +95 XP. Faltam 6 — o Sistema aguarda."
     );
   });
 
   it("dia completo: reconhece a constância", () => {
     const msg = noonSummary(
-      save(["a", "b", "c", "d", "e", "f", "g", "h"], 210, 8, 8),
+      save(["a", "b", "c", "d", "e", "f", "g", "h", "i"], 210, 9, 9),
       "2026-08-16"
     );
     expect(msg).toBe(
-      "Meio-dia, caçador. Dia completo: 8/8 missões · +210 XP hoje. O Sistema reconhece sua constância."
+      "Meio-dia, caçador. Dia completo: 9/9 missões · +210 XP hoje. O Sistema reconhece sua constância."
     );
   });
 

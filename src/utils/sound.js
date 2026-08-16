@@ -10,6 +10,7 @@ export function setSoundEnabled(v) {
 
 function ensureCtx() {
   if (ctx) return ctx;
+  if (typeof window === "undefined") return null;
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return null;
   ctx = new AC();
@@ -108,14 +109,67 @@ const SEQUENCES = {
   ],
 };
 
-export function playSound(name) {
-  if (!enabled) return;
+function playSequence(seq) {
   const ac = ensureCtx();
   if (!ac) return;
   if (ac.state === "suspended") ac.resume();
+  seq.forEach((note) => tone(ac, note));
+}
+
+export function playSound(name) {
+  if (!enabled) return;
   const seq = SEQUENCES[name];
   if (!seq) return;
-  seq.forEach((note) => tone(ac, note));
+  playSequence(seq);
+}
+
+// Tons de notificação personalizados (sintetizados) — cada um com seu
+// padrão de vibração. O som nativo da notificação do celular é controlado
+// pelo sistema operacional (não dá pra trocar via web), então o SYSTEM
+// toca o tom escolhido no app quando o lembrete dispara.
+export const NOTIF_SOUNDS = {
+  chime: {
+    label: "Sino suave",
+    seq: [
+      { freq: 880, at: 0, dur: 0.2, type: "sine", gain: 0.07 },
+      { freq: 1174.66, at: 0.18, dur: 0.24, type: "sine", gain: 0.06 },
+      { freq: 1568, at: 0.38, dur: 0.4, type: "sine", gain: 0.055 },
+    ],
+    vibrate: [120, 60, 120],
+  },
+  beep: {
+    label: "Bipe digital",
+    seq: [
+      { freq: 784, at: 0, dur: 0.13, type: "square", gain: 0.045 },
+      { freq: 784, at: 0.18, dur: 0.13, type: "square", gain: 0.045 },
+      { freq: 1047, at: 0.36, dur: 0.22, type: "square", gain: 0.05 },
+    ],
+    vibrate: [100, 80, 100, 80, 200],
+  },
+  alarm: {
+    label: "Alarme",
+    seq: [
+      { freq: 523, at: 0, dur: 0.16, type: "sawtooth", gain: 0.04 },
+      { freq: 392, at: 0.2, dur: 0.16, type: "sawtooth", gain: 0.04 },
+      { freq: 523, at: 0.4, dur: 0.16, type: "sawtooth", gain: 0.04 },
+      { freq: 392, at: 0.6, dur: 0.34, type: "sawtooth", gain: 0.045 },
+    ],
+    vibrate: [200, 100, 200, 100, 400],
+  },
+};
+
+export const NOTIF_SOUND_NAMES = Object.keys(NOTIF_SOUNDS);
+
+/** Toca o tom de notificação escolhido + vibração própria. */
+export function playNotifySound(name) {
+  if (!enabled) return;
+  const meta = NOTIF_SOUNDS[name] || NOTIF_SOUNDS.chime;
+  playSequence(meta.seq);
+  try {
+    globalThis.navigator?.vibrate?.(meta.vibrate);
+  } catch {
+    /* sem suporte */
+  }
 }
 
 /**
