@@ -119,6 +119,31 @@ describe("createStepCounter", () => {
     counter.push(2.0, 800); // 450ms → aceita
     expect(counter.get()).toBe(3);
   });
+
+  it("ativa modo bolso quando GPS confirma movimento + acel baixa", () => {
+    const counter = createStepCounter();
+    expect(counter.isPocketMode()).toBe(false);
+    // Simula celular no bolso: GPS mostra 1.2 m/s, acel ~1.4g (abaixo do threshold 1.8g)
+    for (let i = 0; i < 6; i++) {
+      counter.push(1.4, i * 400, 1.2); // 1.4g < 1.8g, GPS > 0.5 m/s
+    }
+    expect(counter.isPocketMode()).toBe(true);
+    // Com modo bolso ativo, threshold reduzido (1.4 * 1.15 ≈ 1.61) conta passos
+    expect(counter.get()).toBeGreaterThan(0);
+  });
+
+  it("sai do modo bolso quando GPS para (parado)", () => {
+    const counter = createStepCounter();
+    // Ativa modo bolso
+    for (let i = 0; i < 6; i++) {
+      counter.push(1.4, i * 400, 1.2);
+    }
+    expect(counter.isPocketMode()).toBe(true);
+    // Usuário para (GPS = 0.1 m/s)
+    counter.push(1.4, 3000, 0.1);
+    counter.push(1.4, 3400, 0.1);
+    expect(counter.isPocketMode()).toBe(false);
+  });
 });
 
 describe("walkTotals", () => {

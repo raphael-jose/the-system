@@ -60,33 +60,85 @@ export function createStepCounter({
   minIntervalMs = 250,
   maxIntervalMs = 750,
   hysteresis = 0.85,
-  getSpeed = null,
+  pocketThresholdFloor = 1.0,
 } = {}) {
   let steps = 0;
   let lastPeakAt = -Infinity;
   let above = false;
-  // buffer de velocidades GPS para mediana (ignora picos de GPS ruído)
+  // buffer de velocidades GPS para mediana
   const speedBuf = [];
+  // --- Modo bolso ---
+  // Detecta quando o celular está no bolso: GPS confirma movimento
+  // mas acelerômetro tem picos baixos (sinal atenuado).
+  // Reduz o threshold proporcionalmente para compensar.
+  let pocketMode = false;
+  let pocketThreshold = threshold; // threshold atual (pode ser reduzido)
+  const accelPeaksBuf = []; // últimos picos de aceleração quando GPS > 0.5 m/s
+  let consecutiveLow = 0; // quantos picos consecutivos abaixo do threshold
+
+  function updatePocketMode(mag, gpsSpeed) {
+    // Se o GPS parou ou acelerômetro voltou ao normal, sai do modo bolso
+    if (gpsSpeed != null && gpsSpeed < 0.3) {
+      pocketMode = false;
+      pocketThreshold = threshold;
+      consecutiveLow = 0;
+      return;
+    }
+    if (pocketMode && mag >= threshold) {
+      pocketMode = false;
+      pocketThreshold = threshold;
+      consecutiveLow = 0;
+      return;
+    }
+    // sem GPS suficiente — não alterna modo bolso
+    if (gpsSpeed == null || gpsSpeed < 0.5) {
+      consecutiveLow = 0;
+      return;
+    }
+    // GPS confirma movimento, mas acelerômetro está baixo?
+    if (mag < threshold && mag > 0.8) {
+      consecutiveLow++;
+    } else {
+      consecutiveLow = Math.max(0, consecutiveLow - 2);
+    }
+    // Após 5 picos consecutivos abaixo do threshold com GPS ativo,
+    // ativa modo bolso e reduz o threshold.
+    if (consecutiveLow >= 5 && !pocketMode) {
+      pocketMode = true;
+      const recentPeaks = accelPeaksBuf.slice(-10);
+      if (recentPeaks.length >= 3) {
+        const avg = recentPeaks.reduce((a, b) => a + b, 0) / recentPeaks.length;
+        // threshold = média dos picos (ligeiramente abaixo para capturar)
+        pocketThreshold = Math.max(pocketThresholdFloor, Math.min(avg * 0.95, threshold));
+      } else {
+        pocketThreshold = 1.2;
+      }
+    }
+  }
 
   return {
     push(mag, t, gpsSpeed) {
       // --- Filtro de velocidade GPS ---
-      // Se o usuário está parado (speed < 0.3 m/s), não conta passo.
-      // Isso elimina balanço de celular sem deslocamento.
       if (gpsSpeed != null) {
         speedBuf.push(gpsSpeed);
         if (speedBuf.length > 5) speedBuf.shift();
         const sorted = [...speedBuf].sort((a, b) => a - b);
         const medianSpeed = sorted[Math.floor(sorted.length / 2)];
         if (medianSpeed < 0.3) {
-          // usuário parado — reseta estado above para não acumular
           above = false;
           return steps;
         }
       }
 
+      // --- Modo bolso: detecta e ajusta threshold ---
+      if (mag > 0.8) accelPeaksBuf.push(mag);
+      if (accelPeaksBuf.length > 20) accelPeaksBuf.shift();
+      updatePocketMode(mag, gpsSpeed);
+
+      const effThreshold = pocketMode ? pocketThreshold : threshold;
+
       // --- Detecção de pico com hysteresis ---
-      if (mag >= threshold && !above) {
+      if (mag >= effThreshold && !above) {
         above = true;
         const dt = t - lastPeakAt;
         // cadência dentro da janela válida?
@@ -100,7 +152,7 @@ export function createStepCounter({
           steps += 1;
           lastPeakAt = t;
         }
-      } else if (mag < threshold * hysteresis) {
+      } else if (mag < effThreshold * hysteresis) {
         above = false;
       }
       return steps;
@@ -111,6 +163,18 @@ export function createStepCounter({
       lastPeakAt = -Infinity;
       above = false;
       speedBuf.length = 0;
+      accelPeaksBuf.length = 0;
+      pocketMode = false;
+      pocketThreshold = threshold;
+      consecutiveLow = 0;
+    },
+    /** Retorna se o modo bolso está ativo (threshold reduzido). */
+    isPocketMode() {
+      return pocketMode;
+    },
+    /** Retorna o threshold efetivo atual (útil para debug/UI). */
+    getEffectiveThreshold() {
+      return pocketMode ? pocketThreshold : threshold;
     },
     /** Retorna o total atual sem incrementar. */
     get() {

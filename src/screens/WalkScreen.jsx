@@ -148,8 +148,12 @@ export default function WalkScreen({ run, onClose }) {
       } else {
         // Acelerômetro contando normalmente
         setSteps(accelSteps);
-        if (gpsSteps > 0 && accelSteps === 0) {
+        if (stepCounterRef.current.isPocketMode()) {
+          setSensorInfo(`Passos pelo sensor (modo bolso — sensibilidade aumentada)`);
+        } else if (gpsSteps > 0 && accelSteps === 0) {
           setSensorInfo("Passos pelo GPS (acelerômetro sem detecção)");
+        } else {
+          setSensorInfo("Passos pelo sensor de movimento");
         }
       }
     }, 500);
