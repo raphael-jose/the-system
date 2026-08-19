@@ -37,6 +37,7 @@ export default function WalkScreen({ run, onClose }) {
   const hasAccelRef = useRef(false);
   const stepCounterRef = useRef(createStepCounter());
   const stepsFromAccelRef = useRef(0);
+  const stepsFromGpsRef = useRef(0); // passos estimados por distância GPS
   const gpsSpeedRef = useRef(null); // velocidade GPS atual (m/s)
 
   // ---- Sensores: acelerômetro (passos) + GPS (rota/distância) ----
@@ -66,6 +67,7 @@ export default function WalkScreen({ run, onClose }) {
         accelRef.current = sensor;
         hasAccelRef.current = true;
         setSensorInfo("Passos pelo sensor de movimento");
+        hasAccelRef.current = true;
       } else {
         setSensorInfo("Passos estimados pela distância (sem sensor de movimento)");
       }
@@ -93,6 +95,7 @@ export default function WalkScreen({ run, onClose }) {
               routeRef.current.push(p);
               setRoute([...routeRef.current]);
               kmRef.current = routeDistanceKm(routeRef.current);
+              stepsFromGpsRef.current = estimateSteps(kmRef.current);
               setKm(kmRef.current);
             }
           }
@@ -130,9 +133,24 @@ export default function WalkScreen({ run, onClose }) {
       const total =
         accSecRef.current + (Date.now() - phaseStartRef.current) / 1000;
       setSec(Math.floor(total));
-      // sem acelerômetro: passos estimados pela distância
+
+      // --- Fallback inteligente de passos ---
+      // Se o acelerômetro existe mas não conta (threshold alto, bolso,
+      // celular na mão sem balanço), usa a estimativa GPS como fallback.
+      const accelSteps = stepsFromAccelRef.current;
+      const gpsSteps = stepsFromGpsRef.current;
       if (!hasAccelRef.current) {
-        setSteps(estimateSteps(kmRef.current));
+        // Sem acelerômetro → sempre usa GPS
+        setSteps(gpsSteps);
+      } else if (accelSteps === 0 && gpsSteps > 0) {
+        // Acelerômetro não conta mas GPS mostra movimento → fallback
+        setSteps(gpsSteps);
+      } else {
+        // Acelerômetro contando normalmente
+        setSteps(accelSteps);
+        if (gpsSteps > 0 && accelSteps === 0) {
+          setSensorInfo("Passos pelo GPS (acelerômetro sem detecção)");
+        }
       }
     }, 500);
     return () => clearInterval(iv);
@@ -204,9 +222,10 @@ export default function WalkScreen({ run, onClose }) {
       )
     );
     const finalKm = routeDistanceKm(routeRef.current);
+    const finalGpsSteps = estimateSteps(finalKm);
     const finalSteps = hasAccelRef.current
-      ? stepsFromAccelRef.current
-      : estimateSteps(finalKm);
+      ? Math.max(stepsFromAccelRef.current, finalGpsSteps > 0 && stepsFromAccelRef.current === 0 ? finalGpsSteps : 0)
+      : finalGpsSteps;
     if (finalSec <= 0 && finalSteps <= 0 && finalKm <= 0) {
       playSound("tap");
       return;
