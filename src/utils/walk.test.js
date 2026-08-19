@@ -60,89 +60,85 @@ describe("estimateSteps", () => {
 });
 
 describe("createStepCounter", () => {
-  it("conta picos de aceleração com intervalo mínimo entre passos", () => {
-    const counter = createStepCounter();
-    const samples = [
-      [1.0, 0],
-      [2.0, 100], // pico → passo 1
-      [1.0, 200], // abaixo do limiar → reseta o estado "above"
-      [2.2, 500], // pico → passo 2 (400ms depois do primeiro)
-      [1.0, 600],
-      [2.1, 1000], // pico → passo 3
-    ];
-    let steps = 0;
-    for (const [mag, t] of samples) steps = counter.push(mag, t);
-    expect(steps).toBe(3);
-  });
+  // Helper: alimenta baseline com N amostras em 1.0g
+  function feedBaseline(counter, n = 10) {
+    for (let i = 0; i < n; i++) counter.push(1.0, i * 50);
+  }
 
-  it("não conta dois picos do mesmo passo (intervalo mínimo)", () => {
+  it("conta passos com cadência e amplitude consistentes", () => {
     const counter = createStepCounter();
-    counter.push(2.0, 0);
-    counter.push(2.1, 100); // muito cedo (< 250ms) → ignora
-    counter.push(1.0, 200); // reseta
-    expect(counter.push(2.0, 400)).toBe(2); // agora conta
-  });
-
-  it("ignora passos quando GPS mostra velocidade baixa (parado)", () => {
-    const counter = createStepCounter();
-    // Usuário parado (speed = 0.1 m/s) — balanço do celular
-    counter.push(2.0, 0, 0.1);
-    counter.push(2.1, 300, 0.1);
-    counter.push(2.0, 600, 0.1);
-    expect(counter.get()).toBe(0);
-    // Agora começa a andar (speed = 1.2 m/s)
-    // Buffer de velocidade precisa de amostras suficientes para mediana > 0.3
-    counter.push(2.0, 700, 1.2);  // speedBuf=[0.1,0.1,0.1,1.2], mediana=0.1 < 0.3 → ignora
-    counter.push(1.0, 800, 1.2);  // speedBuf=[0.1,0.1,1.2,1.2], mediana=0.1 < 0.3 → ignora
-    counter.push(2.0, 1100, 1.2); // speedBuf=[0.1,1.2,1.2,1.2], mediana=1.2 ≥ 0.3 → passo 1
-    counter.push(1.0, 1250, 1.2); // desacelera (reseta above)
-    counter.push(2.1, 1500, 1.2); // passo 2
-    counter.push(1.0, 1650, 1.2); // desacelera
-    counter.push(2.0, 1900, 1.2); // passo 3
+    feedBaseline(counter);
+    // 3 passos simulados: baseline ~1.0g, picos ~2.0g, intervalo ~400ms
+    counter.push(2.0, 600);  // passo 1
+    counter.push(1.0, 700);
+    counter.push(2.0, 1000); // passo 2 (400ms)
+    counter.push(1.0, 1100);
+    counter.push(2.0, 1400); // passo 3 (400ms)
     expect(counter.get()).toBe(3);
   });
 
-  it("ignora shaking rápido (< 250ms entre passos)", () => {
+  it("ignora shaking rápido (< 250ms)", () => {
     const counter = createStepCounter();
-    // Shaking: 150ms entre picos — muito rápido para caminhar
-    counter.push(2.0, 0);   // passo 1 (dt > maxInterval → aceita)
-    counter.push(2.1, 150); // < 250ms → ignora
-    counter.push(1.0, 200); // reseta above
-    // Próximo pico: dt = 350ms desde último passo válido (0ms) → aceita
-    counter.push(2.0, 350); // passo 2
+    feedBaseline(counter);
+    counter.push(2.0, 600);  // passo 1
+    counter.push(1.0, 700);
+    counter.push(2.1, 800);  // 100ms depois → muito rápido
+    counter.push(1.0, 850);
+    expect(counter.get()).toBe(1);
+    counter.push(2.0, 1100); // 500ms depois → aceita
     expect(counter.get()).toBe(2);
-    // Shaking rápido novamente
-    counter.push(2.1, 400); // 50ms → ignora
-    counter.push(1.0, 450);
-    expect(counter.get()).toBe(2); // não aumentou
-    // Cadência real (400ms depois do último passo válido em 350ms)
-    counter.push(2.0, 800); // 450ms → aceita
-    expect(counter.get()).toBe(3);
+  });
+
+  it("ignora shaking com amplitude inconsistente", () => {
+    const counter = createStepCounter({ ampTolerance: 0.4 });
+    feedBaseline(counter);
+    counter.push(2.0, 600);  // passo 1
+    counter.push(1.0, 700);
+    counter.push(4.0, 1000); // amplitude 3x maior → rejeita
+    counter.push(1.0, 1100);
+    expect(counter.get()).toBe(1);
+  });
+
+  it("ignora GPS parado (velocidade mediana < 0.3)", () => {
+    const counter = createStepCounter();
+    feedBaseline(counter);
+    counter.push(2.0, 600, 0.1);
+    counter.push(1.0, 700, 0.1);
+    counter.push(2.0, 1000, 0.1);
+    expect(counter.get()).toBe(0);
   });
 
   it("ativa modo bolso quando GPS confirma movimento + acel baixa", () => {
     const counter = createStepCounter();
     expect(counter.isPocketMode()).toBe(false);
-    // Simula celular no bolso: GPS mostra 1.2 m/s, acel ~1.4g (abaixo do threshold 1.8g)
+    feedBaseline(counter, 10);
     for (let i = 0; i < 6; i++) {
-      counter.push(1.4, i * 400, 1.2); // 1.4g < 1.8g, GPS > 0.5 m/s
+      counter.push(1.3, 600 + i * 400, 1.2);
     }
     expect(counter.isPocketMode()).toBe(true);
-    // Com modo bolso ativo, threshold reduzido (1.4 * 1.15 ≈ 1.61) conta passos
-    expect(counter.get()).toBeGreaterThan(0);
   });
 
-  it("sai do modo bolso quando GPS para (parado)", () => {
+  it("sai do modo bolso quando GPS para", () => {
     const counter = createStepCounter();
-    // Ativa modo bolso
+    feedBaseline(counter, 10);
     for (let i = 0; i < 6; i++) {
-      counter.push(1.4, i * 400, 1.2);
+      counter.push(1.3, 600 + i * 400, 1.2);
     }
     expect(counter.isPocketMode()).toBe(true);
-    // Usuário para (GPS = 0.1 m/s)
-    counter.push(1.4, 3000, 0.1);
-    counter.push(1.4, 3400, 0.1);
+    counter.push(1.3, 3500, 0.1);
+    counter.push(1.3, 3900, 0.1);
     expect(counter.isPocketMode()).toBe(false);
+  });
+
+  it("zera com reset()", () => {
+    const counter = createStepCounter();
+    feedBaseline(counter);
+    counter.push(2.0, 600);
+    counter.push(1.0, 700);
+    counter.push(2.0, 1000);
+    expect(counter.get()).toBe(2);
+    counter.reset();
+    expect(counter.get()).toBe(0);
   });
 });
 

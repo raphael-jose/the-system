@@ -41,142 +41,199 @@ export function estimateSteps(km, strideM = STRIDE_M) {
 }
 
 /**
- * Detector de passos por picos de aceleração (magnitude em unidades de g).
+ * Detector de passos por acelerômetro com validação multi-camada.
  *
- * Melhorias anti-falso-positivo:
- *  1. Threshold mais alto (1.8g) — balançar o celular sem andar gera
- *     picos de ~1.2-1.5g; caminhada real gera 1.8-2.5g no eixo vertical.
- *  2. Janela de cadência (250-750ms) — passos reais têm intervalo
- *     entre 250ms (corrida leve) e 750ms (caminhada lenta). Shaking
- *     costuma ser muito mais rápido (<200ms) ou irregular.
- *  3. Validação GPS opcional: `getSpeed()` retorna a velocidade atual
- *     em m/s. Se < 0.3 m/s, o usuário está parado e os passos são
- *     ignorados (balanço sem deslocamento).
+ * Camadas anti-falso-positivo (todas devem passar para contar um passo):
  *
- * `push(mag, t)` retorna o total acumulado de passos.
+ *  1. LOW-PASS FILTER — suaviza o sinal bruto (EMA α=0.2), remove
+ *     ruído de alta frequência (tremor de mão, vibração).
+ *
+ *  2. DETECÇÃO DE PICO — só registra transição repouso→pico quando
+ *     a magnitude cruza um limiar adaptativo (= baseline + 0.35g).
+ *     O baseline é a média das últimas ~50 amostras (≈ 1.7s a 30 Hz).
+ *     Isso garante que o pico é significativo ACIMA do ruído local.
+ *
+ *  3. CADÊNCIA — intervalo entre passos deve ser 250-750ms
+ *     (1.3-4.0 Hz). Shaking costuma ser > 4 Hz ou irregular.
+ *
+ *  4. AMPLITUDE CONSISTENTE — picos consecutivos devem ter
+ *     magnitude similar (desvio < 40% da média). Shaking tende a
+ *     ter amplitudes muito variáveis.
+ *
+ *  5. GPS CROSS-VALIDATION — se GPS disponível, velocidade mediana
+ *     das últimas 5 amostras deve ser > 0.3 m/s.
+ *
+ * Modo bolso: quando GPS confirma movimento mas acelerômetro tem
+ * picos baixos, reduz o limiar adaptativo proporcionalmente.
+ *
+ * @returns {{ push(mag, t, gpsSpeed): number, reset(): void, isPocketMode(): boolean, get(): number }}
  */
 export function createStepCounter({
-  threshold = 1.8,
-  minIntervalMs = 250,
-  maxIntervalMs = 750,
-  hysteresis = 0.85,
+  alpha = 0.2,         // EMA do low-pass filter
+  cadenceMinMs = 250,  // passo mais rápido (corrida leve)
+  cadenceMaxMs = 750,  // passo mais lento (caminhada)
+  baselineWindow = 50, // amostras para baseline (~1.7s a 30Hz)
+  peakProminence = 0.35, // pico precisa ser ≥ 0.35g acima do baseline
+  ampTolerance = 0.4,  // tolerância de amplitude entre passos (40%)
   pocketThresholdFloor = 1.0,
 } = {}) {
   let steps = 0;
   let lastPeakAt = -Infinity;
+  let lastPeakMag = 0;
   let above = false;
-  // buffer de velocidades GPS para mediana
+
+  // Low-pass filter state
+  let filtered = 1.0; // magnitude filtrada (inicia em 1g = repouso)
+  let firstSample = true;
+
+  // Baseline (média móvel das últimas N amostras)
+  const baselineBuf = [];
+
+  // Cadência: histórico dos últimos 6 intervalos para validar padrão
+  const intervalBuf = [];
+
+  // GPS speed buffer para mediana
   const speedBuf = [];
-  // --- Modo bolso ---
-  // Detecta quando o celular está no bolso: GPS confirma movimento
-  // mas acelerômetro tem picos baixos (sinal atenuado).
-  // Reduz o threshold proporcionalmente para compensar.
+
+  // Modo bolso
   let pocketMode = false;
-  let pocketThreshold = threshold; // threshold atual (pode ser reduzido)
-  const accelPeaksBuf = []; // últimos picos de aceleração quando GPS > 0.5 m/s
-  let consecutiveLow = 0; // quantos picos consecutivos abaixo do threshold
+  const accelPeaksBuf = [];
+  let consecutiveLow = 0;
+
+  function getBaseline() {
+    if (baselineBuf.length < 5) return 1.0; // fallback: 1g
+    let sum = 0;
+    for (let i = 0; i < baselineBuf.length; i++) sum += baselineBuf[i];
+    return sum / baselineBuf.length;
+  }
+
+  function getMedianSpeed() {
+    if (speedBuf.length === 0) return null;
+    const sorted = [...speedBuf].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
+  }
+
+  function isCadenceValid(dt) {
+    if (dt < cadenceMinMs) return false; // rápido demais (shaking)
+    if (dt > cadenceMaxMs) return true;  // lento → primeiro passo ou caminhada lenta
+    // Para intervalos dentro da janela, verifica consistência
+    // dos últimos passos (desvio padrão < 200ms)
+    if (intervalBuf.length >= 2) {
+      const mean = intervalBuf.reduce((a, b) => a + b, 0) / intervalBuf.length;
+      const variance = intervalBuf.reduce((s, v) => s + (v - mean) ** 2, 0) / intervalBuf.length;
+      if (Math.sqrt(variance) > 200) return false; // irregular → shaking
+    }
+    return true;
+  }
+
+  function isAmplitudeConsistent(mag) {
+    if (lastPeakMag === 0) return true; // primeiro passo
+    const ratio = Math.abs(mag - lastPeakMag) / Math.max(lastPeakMag, 0.1);
+    return ratio < ampTolerance;
+  }
 
   function updatePocketMode(mag, gpsSpeed) {
-    // Se o GPS parou ou acelerômetro voltou ao normal, sai do modo bolso
     if (gpsSpeed != null && gpsSpeed < 0.3) {
       pocketMode = false;
-      pocketThreshold = threshold;
       consecutiveLow = 0;
       return;
     }
-    if (pocketMode && mag >= threshold) {
-      pocketMode = false;
-      pocketThreshold = threshold;
-      consecutiveLow = 0;
-      return;
-    }
-    // sem GPS suficiente — não alterna modo bolso
     if (gpsSpeed == null || gpsSpeed < 0.5) {
       consecutiveLow = 0;
       return;
     }
-    // GPS confirma movimento, mas acelerômetro está baixo?
-    if (mag < threshold && mag > 0.8) {
+    // GPS confirma movimento, mas acelerômetro baixo?
+    const baseline = getBaseline();
+    const prominence = mag - baseline;
+    if (prominence < peakProminence && mag > 0.8) {
       consecutiveLow++;
     } else {
       consecutiveLow = Math.max(0, consecutiveLow - 2);
     }
-    // Após 5 picos consecutivos abaixo do threshold com GPS ativo,
-    // ativa modo bolso e reduz o threshold.
     if (consecutiveLow >= 5 && !pocketMode) {
       pocketMode = true;
-      const recentPeaks = accelPeaksBuf.slice(-10);
-      if (recentPeaks.length >= 3) {
-        const avg = recentPeaks.reduce((a, b) => a + b, 0) / recentPeaks.length;
-        // threshold = média dos picos (ligeiramente abaixo para capturar)
-        pocketThreshold = Math.max(pocketThresholdFloor, Math.min(avg * 0.95, threshold));
-      } else {
-        pocketThreshold = 1.2;
-      }
+    }
+    if (pocketMode && (gpsSpeed < 0.3 || (mag - baseline) >= peakProminence)) {
+      pocketMode = false;
     }
   }
 
   return {
     push(mag, t, gpsSpeed) {
-      // --- Filtro de velocidade GPS ---
+      // --- 1. Low-pass filter (EMA) ---
+      if (firstSample) {
+        filtered = mag;
+        firstSample = false;
+      } else {
+        filtered = alpha * mag + (1 - alpha) * filtered;
+      }
+
+      // --- 2. Atualiza baseline (média móvel) ---
+      baselineBuf.push(filtered);
+      if (baselineBuf.length > baselineWindow) baselineBuf.shift();
+
+      // --- 3. GPS speed filter ---
       if (gpsSpeed != null) {
         speedBuf.push(gpsSpeed);
         if (speedBuf.length > 5) speedBuf.shift();
-        const sorted = [...speedBuf].sort((a, b) => a - b);
-        const medianSpeed = sorted[Math.floor(sorted.length / 2)];
-        if (medianSpeed < 0.3) {
+        const medianSpeed = getMedianSpeed();
+        if (medianSpeed != null && medianSpeed < 0.3) {
           above = false;
           return steps;
         }
       }
 
-      // --- Modo bolso: detecta e ajusta threshold ---
-      if (mag > 0.8) accelPeaksBuf.push(mag);
+      // --- 4. Modo bolso ---
+      if (filtered > 0.8) accelPeaksBuf.push(filtered);
       if (accelPeaksBuf.length > 20) accelPeaksBuf.shift();
-      updatePocketMode(mag, gpsSpeed);
+      updatePocketMode(filtered, gpsSpeed);
 
-      const effThreshold = pocketMode ? pocketThreshold : threshold;
+      // --- 5. Detecção de pico (usa valor CRU, não filtrado) ---
+      // O filtro suaviza o baseline; o pico real deve ser detectado no
+      // sinal bruto para não perder a transição repouso→pico.
+      const baseline = getBaseline();
+      const prominence = mag - baseline;
+      const effectiveProminence = pocketMode ? peakProminence * 0.7 : peakProminence;
 
-      // --- Detecção de pico com hysteresis ---
-      if (mag >= effThreshold && !above) {
+      if (prominence >= effectiveProminence && !above) {
         above = true;
         const dt = t - lastPeakAt;
-        // cadência dentro da janela válida?
-        if (dt >= minIntervalMs && dt <= maxIntervalMs) {
+
+        const cadenceOk = isCadenceValid(dt);
+        const amplitudeOk = isAmplitudeConsistent(mag);
+
+        if (cadenceOk && amplitudeOk) {
           steps += 1;
           lastPeakAt = t;
+          lastPeakMag = mag;
+          if (dt >= cadenceMinMs && dt <= cadenceMaxMs) {
+            intervalBuf.push(dt);
+            if (intervalBuf.length > 6) intervalBuf.shift();
+          }
         }
-        // se dt < minIntervalMs: muito rápido (shaking) → ignora
-        // se dt > maxIntervalMs: muito lento ou primeiro passo → aceita
-        else if (dt > maxIntervalMs) {
-          steps += 1;
-          lastPeakAt = t;
-        }
-      } else if (mag < effThreshold * hysteresis) {
+      } else if (prominence < effectiveProminence * 0.7) {
         above = false;
       }
+
       return steps;
     },
-    /** Zera o contador (novo dia / reset). */
     reset() {
       steps = 0;
       lastPeakAt = -Infinity;
+      lastPeakMag = 0;
       above = false;
+      filtered = 1.0;
+      firstSample = true;
+      baselineBuf.length = 0;
+      intervalBuf.length = 0;
       speedBuf.length = 0;
       accelPeaksBuf.length = 0;
       pocketMode = false;
-      pocketThreshold = threshold;
       consecutiveLow = 0;
     },
-    /** Retorna se o modo bolso está ativo (threshold reduzido). */
     isPocketMode() {
       return pocketMode;
     },
-    /** Retorna o threshold efetivo atual (útil para debug/UI). */
-    getEffectiveThreshold() {
-      return pocketMode ? pocketThreshold : threshold;
-    },
-    /** Retorna o total atual sem incrementar. */
     get() {
       return steps;
     },
