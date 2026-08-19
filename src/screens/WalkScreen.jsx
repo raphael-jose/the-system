@@ -85,17 +85,30 @@ export default function WalkScreen({ run, onClose }) {
             gpsSpeedRef.current = pos.coords.speed;
           }
           const p = [pos.coords.latitude, pos.coords.longitude];
+          // Filtro GPS robusto: só aceita o ponto se:
+          //  1. Velocidade reportada pelo GPS > 0.5 m/s (realmente andando)
+          //  2. OU distância do último ponto > 8 m (acumulou deslocamento)
+          // Isso elimina jitter de GPS quando parado (2-5 m de ruído).
+          const speed = pos.coords.speed;
+          const hasSpeed = speed != null && speed >= 0;
           const last = lastPosRef.current;
           if (last) {
             const d = haversineKm(last[0], last[1], p[0], p[1]);
-            // Ignora pontos muito parados (< 1 m) para não poluir a rota
-            if (d < 0.001) return;
-            // Sempre adiciona o ponto à rota (mapa mostra GPS mesmo parado)
-            if (routeRef.current.length === 0) routeRef.current.push(last);
-            routeRef.current.push(p);
-            setRoute([...routeRef.current]);
+            const movingBySpeed = hasSpeed && speed >= 0.5;
+            const movingByDistance = d >= 0.008; // ≥ 8 m
+            if (!movingBySpeed && !movingByDistance) return;
+            // Suaviza o GPS: só aceita se moveu consistente (> 3 m)
+            const route = routeRef.current;
+            if (route.length >= 2) {
+              const prev = route[route.length - 1];
+              const dPrev = haversineKm(prev[0], prev[1], p[0], p[1]);
+              if (dPrev < 0.003 && !movingBySpeed) return;
+            }
+            if (route.length === 0) route.push(last);
+            route.push(p);
+            setRoute([...route]);
             if (runningRef.current) {
-              kmRef.current = routeDistanceKm(routeRef.current);
+              kmRef.current = routeDistanceKm(route);
               stepsFromGpsRef.current = estimateSteps(kmRef.current);
               setKm(kmRef.current);
             }
