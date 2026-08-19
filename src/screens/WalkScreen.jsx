@@ -67,7 +67,6 @@ export default function WalkScreen({ run, onClose }) {
         accelRef.current = sensor;
         hasAccelRef.current = true;
         setSensorInfo("Passos pelo sensor de movimento");
-        hasAccelRef.current = true;
       } else {
         setSensorInfo("Passos estimados pela distância (sem sensor de movimento)");
       }
@@ -185,8 +184,13 @@ export default function WalkScreen({ run, onClose }) {
         const total =
           accSecRef.current + (Date.now() - phaseStartRef.current) / 1000;
         setSec(Math.floor(total));
-        if (!hasAccelRef.current) {
-          setSteps(estimateSteps(kmRef.current));
+        // Sincroniza passos: usa GPS fallback se acelerômetro não conta
+        const accelSteps = stepsFromAccelRef.current;
+        const gpsSteps = stepsFromGpsRef.current;
+        if (!hasAccelRef.current || (accelSteps === 0 && gpsSteps > 0)) {
+          setSteps(gpsSteps);
+        } else {
+          setSteps(accelSteps);
         }
       }
     };
