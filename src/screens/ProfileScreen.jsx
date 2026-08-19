@@ -35,7 +35,7 @@ import {
 import { todayStr } from "../utils/dates";
 import { nofapStreak } from "../utils/nofap";
 
-export default function ProfileScreen({ run, onOpenNofap }) {
+export default function ProfileScreen({ run, onOpenNofap, onOpenPerms }) {
   const { player } = usePlayer();
   const { save } = useGame();
   const [name, setName] = useState(player?.name || "");
@@ -330,6 +330,30 @@ export default function ProfileScreen({ run, onOpenNofap }) {
               />
             );
           })}
+        </div>
+      </div>
+
+      {/* Permissões — guia passo a passo */}
+      <div className="sys-frame p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <ShieldCheck size={16} className="text-blue flex-none" />
+            <div className="min-w-0">
+              <p className="font-title text-[14px] font-semibold text-primary">
+                Permissões do sistema
+              </p>
+              <p className="text-[11px] text-secondary">
+                Notificações, GPS e acelerômetro — verifique se tudo está ativo
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenPerms}
+            className="btn-system flex-none px-3 py-1.5 text-[11px]"
+          >
+            Verificar
+          </button>
         </div>
       </div>
 

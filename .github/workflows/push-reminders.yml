@@ -30,11 +30,15 @@ on:
   schedule:
     - cron: "0 15 * * *" # 12:00 BRT — resumo do meio-dia
     - cron: "0 23 * * *" # 20:00 BRT — lembrete diário
+    - cron: "0 21 * * 0" # 18:00 BRT domingo — resumo semanal
   workflow_dispatch: # permite disparar manualmente (Actions → Run workflow)
 
 jobs:
   push:
     runs-on: ubuntu-latest
+    # Não falha o workflow inteiro — erros de push (assinatura expirada,
+    # rede, etc.) são esperados e não devem gerar email de erro.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -59,3 +63,11 @@ jobs:
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           PUSH_SUBSCRIPTION: ${{ secrets.PUSH_SUBSCRIPTION }}
         run: node scripts/send-push.mjs --body "Hora do registro diário, caçador. O Sistema aguarda suas missões de hoje."
+
+      - name: Resumo semanal (domingo)
+        if: github.event.schedule == '0 21 * * 0' || github.event_name == 'workflow_dispatch'
+        env:
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          PUSH_SUBSCRIPTION: ${{ secrets.PUSH_SUBSCRIPTION }}
+        run: node scripts/send-push.mjs --body "Resumo da semana, caçador. Abra o SYSTEM para ver seu progresso — o Sistema reconhece quem persiste."

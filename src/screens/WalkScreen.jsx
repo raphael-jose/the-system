@@ -133,6 +133,25 @@ export default function WalkScreen({ run, onClose }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running]);
 
+  // ---- Visibilidade: sincroniza timer ao voltar ao foreground ----
+  // O navegador põe setInterval em throttle quando a aba está em background;
+  // ao voltar, Date.now() já avançou mas o relógio está defasado. Este
+  // listener força a re-render com o valor correto.
+  useEffect(() => {
+    const onVisChange = () => {
+      if (document.visibilityState === "visible" && runningRef.current) {
+        const total =
+          accSecRef.current + (Date.now() - phaseStartRef.current) / 1000;
+        setSec(Math.floor(total));
+        if (!hasAccelRef.current) {
+          setSteps(estimateSteps(kmRef.current));
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onVisChange);
+    return () => document.removeEventListener("visibilitychange", onVisChange);
+  }, []);
+
   function start() {
     playSound("tap");
     runningRef.current = true;

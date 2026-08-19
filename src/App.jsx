@@ -7,7 +7,7 @@ import {
   setSoundEnabled,
 } from "./utils/sound";
 import { setVoiceEnabled } from "./utils/voice";
-import { dungeonsExpiring, noonSummary, sendNotification } from "./utils/notify";
+import { dungeonsExpiring, noonSummary, sendNotification, weeklySummary } from "./utils/notify";
 import { patternSentence, encouragementMessage } from "./utils/history";
 import { ACHIEVEMENTS } from "./data/achievements";
 import BottomNav from "./components/BottomNav";
@@ -23,6 +23,7 @@ import AchievementsScreen from "./screens/AchievementsScreen";
 import ProfileScreen from "./screens/ProfileScreen";
 import NofapScreen from "./screens/NofapScreen";
 import WalkScreen from "./screens/WalkScreen";
+import PermissionsScreen from "./screens/PermissionsScreen";
 
 export default function App() {
   return (
@@ -39,6 +40,7 @@ function Shell() {
   const [achBatch, setAchBatch] = useState(null);
   const [nofapOpen, setNofapOpen] = useState(false);
   const [walkOpen, setWalkOpen] = useState(false);
+  const [permsOpen, setPermsOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [streakFlash, setStreakFlash] = useState(false);
   const saveRef = useRef(save);
@@ -172,6 +174,36 @@ function Shell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [save?.player?.notifDungeon, save?.player?.notifDungeonDays]);
 
+  // ---- Resumo semanal (domingo, 12:00, app aberto) ----
+  useEffect(() => {
+    if (!save?.player?.notifications) return;
+    if (!("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+
+    const check = () => {
+      const s = saveRef.current;
+      const p = s?.player;
+      if (!p) return;
+      // Só dispara no domingo (day === 0)
+      const now = new Date();
+      if (now.getDay() !== 0) return;
+      // Só depois das 18:00
+      if (now.getHours() < 18) return;
+      // Já disparou hoje?
+      if (p.notifWeeklyFired === todayStr()) return;
+      const body = weeklySummary(s, todayStr());
+      const sent = sendNotification("SYSTEM", body);
+      if (sent) {
+        run({ type: "MARK_WEEKLY_NOTIF_FIRED" });
+        playNotifySound(saveRef.current?.player?.notifSound);
+      }
+    };
+    check();
+    const iv = setInterval(check, 30000);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [save?.player?.notifications, save?.player?.notifWeeklyFired]);
+
   // ---- Dispatcher central: ações + overlay/toasts/sons ----
   function run(action) {
     const res = act(action);
@@ -276,7 +308,7 @@ function Shell() {
         {tab === "history" && <HistoryScreen />}
         {tab === "achievements" && <AchievementsScreen />}
         {tab === "profile" && (
-          <ProfileScreen run={run} onOpenNofap={() => setNofapOpen(true)} />
+          <ProfileScreen run={run} onOpenNofap={() => setNofapOpen(true)} onOpenPerms={() => setPermsOpen(true)} />
         )}
       </main>
 
@@ -304,6 +336,10 @@ function Shell() {
 
       {walkOpen && (
         <WalkScreen run={run} onClose={() => setWalkOpen(false)} />
+      )}
+
+      {permsOpen && (
+        <PermissionsScreen onClose={() => setPermsOpen(false)} />
       )}
     </div>
   );

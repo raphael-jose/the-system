@@ -1,5 +1,5 @@
 // Notificações nativas — parte pura testável + helper do Notification API.
-import { addDays, daysUntil, parseLocal, todayStr } from "./dates";
+import { addDays, daysUntil, parseLocal, todayStr, weekStartStr } from "./dates";
 
 const HOUR = 3600000;
 const DAY = 86400000;
@@ -100,6 +100,79 @@ export function sendNotification(title, body) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Resumo semanal: tudo que o caçador fez na semana (seg→dom).
+ * Calcula XP total, dias ativos, missões completadas, streak e walks.
+ * `today` injetável para testes.
+ */
+export function weeklySummary(save, today = todayStr()) {
+  const wk = weekStartStr(parseLocal(today));
+  const hist = save?._dailyHistory || {};
+
+  let totalXp = 0;
+  let activeDays = 0;
+  let totalMissions = 0;
+  let totalWalks = 0;
+  let totalSteps = 0;
+  let totalKm = 0;
+  const byCat = {};
+
+  // Itera dia a dia da segunda até hoje
+  let d = wk;
+  while (d <= today) {
+    const rec = hist[d];
+    if (rec && !Array.isArray(rec)) {
+      const xp = Number(rec.xp) || 0;
+      const ids = Array.isArray(rec.ids) ? rec.ids : [];
+      const walks = Array.isArray(rec.walks) ? rec.walks : [];
+      if (xp > 0 || ids.length > 0) activeDays++;
+      totalXp += xp;
+      totalMissions += ids.length;
+      for (const cat of Object.keys(rec.byCat || {})) {
+        byCat[cat] = (byCat[cat] || 0) + rec.byCat[cat];
+      }
+      for (const w of walks) {
+        totalWalks++;
+        totalSteps += Math.max(0, Number(w.steps) || 0);
+        totalKm += Math.max(0, Number(w.km) || 0);
+      }
+    }
+    d = addDays(d, 1);
+  }
+
+  const streak = save?.player?.streak || 0;
+  const weekliesCompleted = (save?.weeklyMissions || []).filter((m) => m.completed).length;
+  const weekliesTotal = (save?.weeklyMissions || []).length;
+
+  const lines = [];
+  lines.push(`Resumo da semana, caçador.`);
+  lines.push(`${activeDays} dias ativos · ${totalMissions} missões · ${totalXp} XP.`);
+
+  if (totalWalks > 0) {
+    lines.push(
+      `${totalWalks} caminhada${totalWalks > 1 ? "s" : ""}: ${totalSteps.toLocaleString("pt-BR")} passos · ${totalKm.toFixed(1)} km.`
+    );
+  }
+
+  if (weekliesCompleted > 0) {
+    lines.push(
+      `${weekliesCompleted}/${weekliesTotal} semanais concluídas.`
+    );
+  } else if (weekliesTotal > 0) {
+    lines.push(`Nenhuma semanal concluída ainda — amanhã é segunda, recomece.`);
+  }
+
+  if (streak >= 7) {
+    lines.push(`Streak de ${streak} dias! O Sistema reconhece sua disciplina.`);
+  } else if (streak >= 3) {
+    lines.push(`${streak} dias de streak — continue firme.`);
+  } else {
+    lines.push(`Streak atual: ${streak} dias.`);
+  }
+
+  return lines.join(" ");
 }
 
 /** O navegador suporta notificações? */

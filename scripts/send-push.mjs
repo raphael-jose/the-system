@@ -38,16 +38,22 @@ const subRaw = args["subscription-file"]
   : process.env.PUSH_SUBSCRIPTION;
 
 if (!pub || !priv) {
-  console.error(
-    "ERRO: faltam VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY no ambiente (secrets do GitHub)."
+  // Chaves não configuradas — aviso silencioso (exit 0) para não spammar
+  // o email do dono com erros do GitHub Actions.
+  console.warn(
+    "AVISO: faltam VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY no ambiente. " +
+      "Configure os secrets no GitHub (Settings → Secrets → Actions). " +
+      "Veja PUSH_SETUP.md."
   );
-  process.exit(1);
+  process.exit(0);
 }
 if (!subRaw) {
-  console.error(
-    "ERRO: falta PUSH_SUBSCRIPTION (ou --subscription-file) com o JSON exportado no app."
+  console.warn(
+    "AVISO: falta PUSH_SUBSCRIPTION — nenhuma inscrição de push registrada. " +
+      "Ative no app (Perfil → Alertas com o app fechado → Exportar inscrição) " +
+      "e adicione o JSON como secret PUSH_SUBSCRIPTION no GitHub."
   );
-  process.exit(1);
+  process.exit(0);
 }
 
 let subscription;
@@ -57,8 +63,8 @@ try {
     throw new Error("inscrição sem endpoint/keys");
   }
 } catch (e) {
-  console.error("ERRO: PUSH_SUBSCRIPTION inválido —", e.message);
-  process.exit(1);
+  console.warn("AVISO: PUSH_SUBSCRIPTION inválido —", e.message);
+  process.exit(0);
 }
 
 // web-push é devDependency — carregado só aqui (fora do bundle do PWA)
@@ -80,6 +86,21 @@ try {
   const res = await webpush.sendNotification(subscription, payload);
   console.log(`Push enviado (HTTP ${res.statusCode}): ${args.body || ""}`);
 } catch (e) {
-  console.error("Falha ao enviar:", e.message);
-  process.exit(1);
+  const msg = e.message || String(e);
+  // 404 = inscrição expirada/revogada, 410 = endpoint eliminado
+  // São erros de "assinatura inválida" — o dono precisa reativar o push
+  // no app. Sai com 0 para não gerar email de erro no GitHub.
+  if (msg.includes("404") || msg.includes("410") || msg.includes("push subscription")) {
+    console.warn(
+      "AVISO: inscrição de push expirada ou inválida (HTTP " +
+        (msg.includes("404") ? "404" : msg.includes("410") ? "410" : "?") +
+        "). O usuário precisa reativar o push no app: " +
+        "Perfil → Alertas com o app fechado → ativar novamente."
+    );
+    process.exit(0);
+  }
+  // Outro erro de rede pode ser temporário — ainda assim sai 0 para
+  // evitar spam de email. O push pode falhar vez ou outra por rede.
+  console.warn("AVISO: falha ao enviar push —", msg);
+  process.exit(0);
 }

@@ -58,6 +58,7 @@ export function defaultSave() {
       notifSound: "chime",
       notifNoon: false,
       notifNoonFired: "",
+      notifWeeklyFired: "",
       notifDungeon: false,
       notifDungeonDays: 2,
       // Web Push (notificações com o app fechado) — estado de UI; a
@@ -159,10 +160,19 @@ function normalizeHistory(raw) {
   return out;
 }
 
-const EXERCISE_DAILIES = ["d-pushups", "d-squats", "d-cardio"];
+const EXERCISE_DAILIES = ["d-pushups", "d-squats", "d-cardio", "walk"];
 const STUDY_DAILY = "d-study";
 const ALL_DAILY_ID = "d-all";
 const DISCIPLINE_DAILY_ID = "d-discipline";
+
+// ---- Auto-progress de dungeons ----
+// Quando o jogador completa uma missão diária, o progresso correspondente
+// na dungeon é atualizado automaticamente. O mapa define: dailyId → { dungeonId, amount }.
+// "walk" é tratado separadamente (amount = km real da caminhada).
+const DUNGEON_DAILY_MAP = {
+  "d-pushups": { dungeonId: "dg-pushups", amount: 30 }, // 3 séries × 10
+  "d-study":   { dungeonId: "dg-mind",    amount: 1 },   // 1 dia de estudo
+};
 
 // ---- Histórico diário: { [data]: { ids, xp, hours, byCat, sessions } } ----
 // ids: missões concluídas no dia (alimenta as semanais)
@@ -187,6 +197,65 @@ const WEEKLY_NEEDS = {
   "w-all-daily": 4,
   "w-streak": 7,
 };
+
+/**
+ * Aplica progresso automático a dungeons a partir de uma missão diária.
+ * Retorna [novoEstado, toast|null]. Modifica o estado in-place (reducer).
+ */
+function applyDungeonAutoProgress(s, dailyId, amount) {
+  const today = todayStr();
+  let ns = s;
+  let toast = null;
+
+  // Missão diária → dungeon fixa (pushups, study)
+  const mapping = DUNGEON_DAILY_MAP[dailyId];
+  if (mapping) {
+    const d = ns.dungeons.find((x) => x.id === mapping.dungeonId);
+    if (d && !d.completed && !d.failed) {
+      const startedAt = d.startedAt || today;
+      const deadline = addDaysStr(startedAt, d.deadlineDays);
+      const failed = today > deadline;
+      const progress = Math.min(d.goal, Math.max(0, d.progress + mapping.amount));
+      const done = progress >= d.goal;
+      ns = {
+        ...ns,
+        dungeons: ns.dungeons.map((x) =>
+          x.id === mapping.dungeonId
+            ? { ...x, progress, startedAt, failed, completed: done, completedAt: done ? today : null }
+            : x
+        ),
+      };
+      if (done && !d.completed) {
+        toast = `Dungeon concluída: ${d.title}. Reivindique a recompensa.`;
+      }
+    }
+  }
+
+  // Caminhada → dg-marathon (amount = km)
+  if (dailyId === "walk" && amount > 0) {
+    const d = ns.dungeons.find((x) => x.id === "dg-marathon");
+    if (d && !d.completed && !d.failed) {
+      const startedAt = d.startedAt || today;
+      const deadline = addDaysStr(startedAt, d.deadlineDays);
+      const failed = today > deadline;
+      const progress = Math.min(d.goal, Math.max(0, d.progress + amount));
+      const done = progress >= d.goal;
+      ns = {
+        ...ns,
+        dungeons: ns.dungeons.map((x) =>
+          x.id === "dg-marathon"
+            ? { ...x, progress, startedAt, failed, completed: done, completedAt: done ? today : null }
+            : x
+        ),
+      };
+      if (done && !d.completed) {
+        toast = `Dungeon concluída: ${d.title}. Reivindique a recompensa.`;
+      }
+    }
+  }
+
+  return [ns, toast];
+}
 
 function emptyReward() {
   return {
@@ -640,6 +709,16 @@ export function reduce(state, action) {
       ];
     }
 
+    case "MARK_WEEKLY_NOTIF_FIRED": {
+      return [
+        {
+          ...state,
+          player: { ...state.player, notifWeeklyFired: todayStr() },
+        },
+        null,
+      ];
+    }
+
     case "TOGGLE_DUNGEON_NOTIF": {
       const next = !state.player.notifDungeon;
       return [
@@ -923,6 +1002,12 @@ export function reduce(state, action) {
       // ---- Progresso + auto-complete semanais ----
       [s] = updateWeeklies(s, today, mult, reward, id);
 
+      // ---- Auto-progress de dungeons (ex: d-pushups → dg-pushups) ----
+      let dungeonToast = null;
+      if (list === "daily") {
+        [s, dungeonToast] = applyDungeonAutoProgress(s, id, 0);
+      }
+
       // ---- SP por level ganho (distribuição manual) ----
       const spGained = reward.levelsGained * SP_PER_LEVEL;
       if (spGained > 0) {
@@ -969,6 +1054,14 @@ export function reduce(state, action) {
       const [finalS, newlyAch] = applyAchievements(s, today);
       reward.achievementsGained = newlyAch;
       reward.spFromAch = achievementSpReward(newlyAch);
+
+      // ---- Toast da dungeon (se concluída pelo auto-progress) ----
+      if (dungeonToast) {
+        reward.toast = reward.toast
+          ? [reward.toast, dungeonToast]
+          : dungeonToast;
+      }
+
       return [finalS, reward];
     }
 
@@ -1065,6 +1158,7 @@ export function reduce(state, action) {
 
     case "SAVE_WALK": {
       // Registra uma caminhada no dia (passos, km, duração e rota GPS).
+      // XP baseado na distância (1 XP / 100m, mínimo 5) + streak multiplier.
       const today = todayStr();
       const sec = Math.max(0, Math.floor(Number(action.sec) || 0));
       const steps = Math.max(0, Math.floor(Number(action.steps) || 0));
@@ -1077,22 +1171,94 @@ export function reduce(state, action) {
             .slice(-500) // limita a rota salva (a mais recente)
         : [];
       if (sec <= 0 && steps <= 0 && km <= 0) return [state, null];
+
+      // ---- XP da caminhada: 1 XP por 100 m (mín. 5) ----
+      const baseXp = Math.max(5, Math.round(km * 10));
+      const mult = streakMultiplier(state.player.streak);
+      const xp = Math.round(baseXp * mult);
+
+      // ---- Atualiza streak (dia com atividade) ----
+      const last = state.player.lastActivityDate;
+      let streak = state.player.streak;
+      if (last === today) {
+        // já ativo hoje
+      } else if (last === yesterdayStr()) {
+        streak += 1;
+      } else {
+        streak = 1;
+      }
+
+      // ---- Aplica XP e stats ----
+      let player = {
+        ...state.player,
+        streak,
+        lastActivityDate: today,
+        totalMissionsCompleted: (state.player.totalMissionsCompleted || 0) + 1,
+      };
+      const { player: p1, levelsGained } = applyXp(player, xp);
+      player = p1;
+
+      // ---- Histórico do dia: ids + walks + XP + categoria ----
       const hist = { ...(state._dailyHistory || {}) };
       const prev = hist[today];
       const base = prev && !Array.isArray(prev) ? prev : emptyDayRecord();
       hist[today] = {
         ...base,
+        ids: [...new Set([...historyIds(prev), "walk"])],
+        xp: (base.xp || 0) + xp,
+        hours: [...(base.hours || []), action.hour ?? new Date().getHours()],
+        byCat: addCat(base.byCat || {}, "treino"),
         walks: [
           ...(base.walks || []),
           { title: "Caminhada", sec, steps, km, route },
         ],
       };
+
+      let s = {
+        ...state,
+        player,
+        _dailyHistory: hist,
+      };
+
+      // ---- SP por level ganho ----
+      const spGained = levelsGained * SP_PER_LEVEL;
+      if (spGained > 0) {
+        s = { ...s, player: { ...s.player, sp: (s.player.sp || 0) + spGained } };
+      }
+
+      // ---- Progresso semanal (w-trainings conta dias com treino) ----
+      const reward = emptyReward();
+      reward.xpGained = xp;
+      reward.levelsGained = levelsGained;
+      reward.spGained = spGained;
+      [s] = updateWeeklies(s, today, mult, reward, "walk");
+
+      // ---- Auto-progress de dungeon: caminhada → dg-maraton ----
+      let dungeonToast = null;
+      [s, dungeonToast] = applyDungeonAutoProgress(s, "walk", km);
+
+      // ---- Conquistas ----
+      const [finalS, newlyAch] = applyAchievements(s, today);
+
       return [
-        { ...state, _dailyHistory: hist },
+        finalS,
         {
-          toast: `Caminhada registrada: ${steps.toLocaleString(
-            "pt-BR"
-          )} passos · ${km.toFixed(2)} km`,
+          xpGained: xp,
+          statsGained: {},
+          levelsGained,
+          spGained,
+          spFromAch: achievementSpReward(newlyAch),
+          achievementsGained: newlyAch,
+          rankBefore: rankForLevel(state.player.level).rank,
+          rankAfter: rankForLevel(finalS.player.level).rank,
+          fromLevel: state.player.level,
+          toLevel: finalS.player.level,
+          weeklyCompleted: reward.weeklyCompleted,
+          toast: dungeonToast
+            ? [`Caminhada: ${steps.toLocaleString("pt-BR")} passos · ${km.toFixed(2)} km · +${xp} XP`, dungeonToast]
+            : `Caminhada registrada: ${steps.toLocaleString(
+                "pt-BR"
+              )} passos · ${km.toFixed(2)} km · +${xp} XP`,
         },
       ];
     }
