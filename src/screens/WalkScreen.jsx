@@ -37,6 +37,7 @@ export default function WalkScreen({ run, onClose }) {
   const hasAccelRef = useRef(false);
   const stepCounterRef = useRef(createStepCounter());
   const stepsFromAccelRef = useRef(0);
+  const gpsSpeedRef = useRef(null); // velocidade GPS atual (m/s)
 
   // ---- Sensores: acelerômetro (passos) + GPS (rota/distância) ----
   useEffect(() => {
@@ -52,7 +53,8 @@ export default function WalkScreen({ run, onClose }) {
             Math.sqrt(sensor.x ** 2 + sensor.y ** 2 + sensor.z ** 2) / 9.81;
           stepsFromAccelRef.current = stepCounterRef.current.push(
             mag,
-            Date.now()
+            Date.now(),
+            gpsSpeedRef.current
           );
           setSteps(stepsFromAccelRef.current);
         });
@@ -76,6 +78,10 @@ export default function WalkScreen({ run, onClose }) {
       watchIdRef.current = navigator.geolocation.watchPosition(
         (pos) => {
           if (cancelled) return;
+          // Salva velocidade GPS para validação do acelerômetro
+          if (pos.coords.speed != null && pos.coords.speed >= 0) {
+            gpsSpeedRef.current = pos.coords.speed;
+          }
           const p = [pos.coords.latitude, pos.coords.longitude];
           const last = lastPosRef.current;
           if (last) {

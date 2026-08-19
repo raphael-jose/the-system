@@ -64,11 +64,11 @@ describe("createStepCounter", () => {
     const counter = createStepCounter();
     const samples = [
       [1.0, 0],
-      [1.4, 100], // pico → passo 1
+      [2.0, 100], // pico → passo 1
       [1.0, 200], // abaixo do limiar → reseta o estado "above"
-      [1.5, 500], // pico → passo 2 (400ms depois do primeiro)
+      [2.2, 500], // pico → passo 2 (400ms depois do primeiro)
       [1.0, 600],
-      [1.5, 1000], // pico → passo 3
+      [2.1, 1000], // pico → passo 3
     ];
     let steps = 0;
     for (const [mag, t] of samples) steps = counter.push(mag, t);
@@ -77,10 +77,47 @@ describe("createStepCounter", () => {
 
   it("não conta dois picos do mesmo passo (intervalo mínimo)", () => {
     const counter = createStepCounter();
-    counter.push(1.4, 0);
-    counter.push(1.5, 100); // muito cedo (< 350ms) → ignora
+    counter.push(2.0, 0);
+    counter.push(2.1, 100); // muito cedo (< 250ms) → ignora
     counter.push(1.0, 200); // reseta
-    expect(counter.push(1.5, 400)).toBe(2); // agora conta
+    expect(counter.push(2.0, 400)).toBe(2); // agora conta
+  });
+
+  it("ignora passos quando GPS mostra velocidade baixa (parado)", () => {
+    const counter = createStepCounter();
+    // Usuário parado (speed = 0.1 m/s) — balanço do celular
+    counter.push(2.0, 0, 0.1);
+    counter.push(2.1, 300, 0.1);
+    counter.push(2.0, 600, 0.1);
+    expect(counter.get()).toBe(0);
+    // Agora começa a andar (speed = 1.2 m/s)
+    // Buffer de velocidade precisa de amostras suficientes para mediana > 0.3
+    counter.push(2.0, 700, 1.2);  // speedBuf=[0.1,0.1,0.1,1.2], mediana=0.1 < 0.3 → ignora
+    counter.push(1.0, 800, 1.2);  // speedBuf=[0.1,0.1,1.2,1.2], mediana=0.1 < 0.3 → ignora
+    counter.push(2.0, 1100, 1.2); // speedBuf=[0.1,1.2,1.2,1.2], mediana=1.2 ≥ 0.3 → passo 1
+    counter.push(1.0, 1250, 1.2); // desacelera (reseta above)
+    counter.push(2.1, 1500, 1.2); // passo 2
+    counter.push(1.0, 1650, 1.2); // desacelera
+    counter.push(2.0, 1900, 1.2); // passo 3
+    expect(counter.get()).toBe(3);
+  });
+
+  it("ignora shaking rápido (< 250ms entre passos)", () => {
+    const counter = createStepCounter();
+    // Shaking: 150ms entre picos — muito rápido para caminhar
+    counter.push(2.0, 0);   // passo 1 (dt > maxInterval → aceita)
+    counter.push(2.1, 150); // < 250ms → ignora
+    counter.push(1.0, 200); // reseta above
+    // Próximo pico: dt = 350ms desde último passo válido (0ms) → aceita
+    counter.push(2.0, 350); // passo 2
+    expect(counter.get()).toBe(2);
+    // Shaking rápido novamente
+    counter.push(2.1, 400); // 50ms → ignora
+    counter.push(1.0, 450);
+    expect(counter.get()).toBe(2); // não aumentou
+    // Cadência real (400ms depois do último passo válido em 350ms)
+    counter.push(2.0, 800); // 450ms → aceita
+    expect(counter.get()).toBe(3);
   });
 });
 
