@@ -87,13 +87,14 @@ export default function WalkScreen({ run, onClose }) {
           const p = [pos.coords.latitude, pos.coords.longitude];
           const last = lastPosRef.current;
           if (last) {
-            // ignora pontos parados (< 3 m) para não poluir a rota
             const d = haversineKm(last[0], last[1], p[0], p[1]);
-            if (d < 0.003) return;
+            // Ignora pontos muito parados (< 1 m) para não poluir a rota
+            if (d < 0.001) return;
+            // Sempre adiciona o ponto à rota (mapa mostra GPS mesmo parado)
+            if (routeRef.current.length === 0) routeRef.current.push(last);
+            routeRef.current.push(p);
+            setRoute([...routeRef.current]);
             if (runningRef.current) {
-              if (routeRef.current.length === 0) routeRef.current.push(last);
-              routeRef.current.push(p);
-              setRoute([...routeRef.current]);
               kmRef.current = routeDistanceKm(routeRef.current);
               stepsFromGpsRef.current = estimateSteps(kmRef.current);
               setKm(kmRef.current);
@@ -376,8 +377,12 @@ function RouteMap({ route }) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, cssW, cssH);
 
-      // grade sutil (estilo HUD)
-      ctx.strokeStyle = "rgba(75, 79, 216, 0.14)";
+      // fundo do canvas
+      ctx.fillStyle = "#0a0a16";
+      ctx.fillRect(0, 0, cssW, cssH);
+
+      // grade HUD
+      ctx.strokeStyle = "rgba(75, 79, 216, 0.2)";
       ctx.lineWidth = 1;
       for (let x = 0; x <= cssW; x += 32) {
         ctx.beginPath();
@@ -394,8 +399,8 @@ function RouteMap({ route }) {
 
       const pts = routeRef.current;
       if (pts.length < 2) {
-        ctx.fillStyle = "rgba(107, 114, 128, 0.8)";
-        ctx.font = "11px Rajdhani, sans-serif";
+        ctx.fillStyle = "#6b7280";
+        ctx.font = "12px Rajdhani, sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(
           pts.length === 1 ? "LOCALIZANDO…" : "AGUARDANDO SINAL GPS…",
@@ -432,19 +437,32 @@ function RouteMap({ route }) {
         ctx.lineTo(x, y);
       }
       ctx.strokeStyle = "#4f8ef7";
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 3;
       ctx.lineJoin = "round";
-      ctx.shadowColor = "rgba(79, 142, 247, 0.6)";
-      ctx.shadowBlur = 8;
+      ctx.lineCap = "round";
+      ctx.shadowColor = "rgba(79, 142, 247, 0.7)";
+      ctx.shadowBlur = 10;
       ctx.stroke();
       ctx.shadowBlur = 0;
 
-      // posição atual
+      // início da rota (ponto vermelho)
+      if (pts.length >= 2) {
+        const [xs, ys] = px(pts[0][0], pts[0][1]);
+        ctx.fillStyle = "#ef4444";
+        ctx.beginPath();
+        ctx.arc(xs, ys, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // posição atual (ponto verde com glow)
       const [xe, ye] = px(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+      ctx.shadowColor = "rgba(34, 197, 94, 0.8)";
+      ctx.shadowBlur = 8;
       ctx.fillStyle = "#22c55e";
       ctx.beginPath();
-      ctx.arc(xe, ye, 4, 0, Math.PI * 2);
+      ctx.arc(xe, ye, 5, 0, Math.PI * 2);
       ctx.fill();
+      ctx.shadowBlur = 0;
     };
     draw();
     const ro = new ResizeObserver(draw);
@@ -458,6 +476,7 @@ function RouteMap({ route }) {
     <canvas
       ref={canvasRef}
       className="w-full h-[200px] rounded-[3px] block"
+      style={{ background: '#0a0a16' }}
       aria-label="Mapa da rota da caminhada"
     />
   );
