@@ -869,6 +869,22 @@ export function reduce(state, action) {
         };
       }
 
+      // Reset de escovação (virou o dia → zera os slots)
+      const oral = s.player?.oral || {};
+      if (oral.date && oral.date !== today) {
+        s = {
+          ...s,
+          player: {
+            ...s.player,
+            oral: {
+              ...oral,
+              date: today,
+              slots: [false, false, false],
+            },
+          },
+        };
+      }
+
       // Reset semanal (segunda-feira)
       const wk = weekStartStr();
       if (s.lastWeeklyReset !== wk) {
